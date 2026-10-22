@@ -1,0 +1,6 @@
+add_library(ffgl-plugin-layer-control-probe MODULE LayerControlProbe.cpp)
+target_link_libraries(ffgl-plugin-layer-control-probe PRIVATE ffgl::sdk)
+if(WIN32)
+  target_link_libraries(ffgl-plugin-layer-control-probe PRIVATE ws2_32)
+  target_sources(ffgl-plugin-layer-control-probe PRIVATE ../../../build/windows/FFGLPlugins.def)
+endif()
