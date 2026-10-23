@@ -6,6 +6,7 @@
 
 | 場所 | 責務 | 別プラグインへの流用 |
 | --- | --- | --- |
+| `source/control/ServerSettings.h` | Documents既知フォルダー・ホスト確認、本体server.xmlの有限サイズ読取りと検査 | Windows／実測Arena形式のみ |
 | `source/control/WebSocket.h` | Windows WinHTTP、ローカル接続、分割受信、送信、終了 | そのまま利用。Windows以外ではこのアダプターを交換 |
 | `source/control/Composition.h` | Composition判別、実行時キーからClipを解決、Active判定、パラメータIDの検査 | Resolume連携の共通部分 |
 | `source/control/StateReconciler.h` | 現在値との差分、競合・未完了・失敗要求の抑止 | LayerやFFGLを知らない純粋ロジック |

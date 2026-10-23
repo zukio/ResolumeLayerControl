@@ -20,13 +20,15 @@ WebSocket専用の`Layer Control`を旧OSC診断Probeとは別DLLとして追加
 - Clip対応付けは実行時GUIDを`Instance Key`テキストパラメータとして公開し、Composition内で一意に観測できた場合だけ成立とする設計案。復元／複製された旧キーは採用しない。FFGL VALUEイベントによるArena側への伝播は実機未検証。曖昧・不在なら送信しない。
 - 記録に存在する50種類のTransition選択肢とDuration 0〜10秒を検証用UIへ採用。送信時は最新Compositionの型・options・min/max・IDも検査する。未知値を補正しない。
 - Group入りCompositionは番号対応の実機確認まで送信しない。Target Layer UI上限1024は実装の上限であり、ホストの最大Layer数を意味しない。
-- Webserverポートは環境変数で明示し、未設定なら接続しない。DLL内で接続を共有し、受信メッセージ／インスタンス／未完了要求を有限にする。自動再接続・自動再送は初版では行わない。
+- Webserverポートは本体の保存設定`server.xml`から取得し、不明・不正・無効なら接続しない。DLL内で接続を共有し、受信メッセージ／インスタンス／未完了要求を有限にする。自動再接続・自動再送は初版では行わない。
 - 同一項目を複数のActive Sourceが要求した場合は送信を抑止する。新しい通知をまだ受信していない間のホスト側変更、および送信済み要求の取消は保証しない。
 - Windows Release DLLのビルド、合成状態・保存ログを使うC++試験、ローカルWebSocketサーバーとの通信試験を実施。これは段階2のClip対応付けやAT-02の映像反映の合格ではない。段階2の未検証条件を残し、独立に試験できる基盤を実装した段階である。
 
 利用者が任意のコマンドを入力するUIは追加しない。ひな型としての拡張はコード側のポリシー交換で行い、追加項目も実値の取得・差分・Active条件を検証する。
 
 ### 2026-10-23 設計方針（この版の基準）
+
+- 接続設定：本体Webserver設定読取りを標準とし、DLL隣接JSONと`RLC_WS_PORT`を廃止する。WindowsのDocuments既知フォルダー配下の`Resolume Arena/Preferences/server.xml`をRuntime開始時にワーカーで一度だけ読む。実測したArena.exe／Arena 7.27.1の形式を対象とし、他ホストは接続しない。`enabled`は0/1、`port`は1〜65535、`address`は0.0.0.0／127.0.0.1のみ受理し、接続先は127.0.0.1固定。ログは任意の`RLC_WS_LOG`だけで指定する。XML不明・不正時の既定ポートへのフォールバックはしない。保存時期・起動順序は実機未検証。ポート変更の監視・自動再接続は追加しない。[VALIDATION.md](VALIDATION.md)を参照。
 
 - **適用契機はResolume WebSocketのComposition状態通知とする。** 定期ポーリングやFFGLの`Connect()`・`SetTime()`によるトリガー推定を基本方式にしない。
 - 通知を受けたら、**対象の制御用Effect Clipが本番出力でActiveか**、そのClipの**指定値とTarget Layerの実際の現在値が異なるか**を照合する。Activeかつ不一致の項目だけWebSocketの`set`で同期する。

@@ -1,6 +1,6 @@
 # ResolumeLayerControl
 
-ResolumePlugin is a custom FFGL plugin that lets you control a specified layer’s transition settings and mask mode using an Effect Clip.
+An FFGL plugin for controlling a layer's Transition Blend Mode, Duration, and Mask Mode using an Effect Clip.
 
 ## Setup
 
@@ -10,10 +10,11 @@ ResolumePlugin is a custom FFGL plugin that lets you control a specified layer�
 
 ### Use in Resolume
 
-1️⃣ Copy the DLL to `%USERPROFILE%\Documents\Resolume Arena\Extra Effects` (or add its folder in Resolume preferences),
-2️⃣ restart Resolume,
-3️⃣ add **Layer Control** as an Effect Clip,
-4️⃣ and Reload the window list once.
+1️⃣ Copy `LayerControl.dll` to `Documents\Resolume Arena\Extra Effects`.  
+2️⃣ Start or restart Resolume Arena,  
+3️⃣ Enable **Preferences > Webserver**. Keep Webserver enabled while using the plugin.  
+4️⃣ Add **Layer Control** to an Effect Clip from the Effects tab.  
+5️⃣ Leave **Enabled** on and trigger the Clip's Column.
 
 ## Build
 

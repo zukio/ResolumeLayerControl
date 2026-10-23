@@ -10,7 +10,7 @@
 
 | 項目 | 確認内容 | 実装／残る確認 |
 | --- | --- | --- |
-| endpoint | 公式資料：`ws://address:port/api/v1` | hostは127.0.0.1固定、portは`RLC_WS_PORT`で指定。実機の現在ポート未確認・既定値なし |
+| endpoint | 公式資料：`ws://address:port/api/v1` | hostは127.0.0.1固定、portは本体の`Documents/Resolume Arena/Preferences/server.xml`から取得。実測保存値8080（Arena 7.27.1）、既定値へのフォールバックなし。enabled=1かつaddress=0.0.0.0／127.0.0.1のみ接続 |
 | Composition | 記録：トップレベル`layers`配列 | このメッセージだけが新しい差分同期の契機 |
 | Layer番号 | 記録のlayers配列、既存inspect_websocket.cjsは番号-1を使用 | 初版は番号-1。Group入りCompositionは送信停止、移動後は新しい順番を使用。実機番号対応AT-11未確認 |
 | Clip ID | `layers[].clips[].id` | int64。起動間で固定しない |

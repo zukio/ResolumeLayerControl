@@ -1,6 +1,7 @@
 #pragma once
 #include "Composition.h"
 #include "WebSocket.h"
+#include "ServerSettings.h"
 #include <atomic>
 #include <fstream>
 #include <functional>
@@ -48,7 +49,22 @@ public:
         socket.Cancel();
         if (worker.joinable()) worker.join();
     }
+#ifdef RLC_RUNTIME_TESTING
+    static std::shared_ptr<Runtime> ForTest(const std::filesystem::path& file) {
+        return std::shared_ptr<Runtime>(new Runtime(file));
+    }
+#endif
 private:
+    std::filesystem::path HostSettingsFile() const {
+#ifdef RLC_RUNTIME_TESTING
+        if (!testSettingsFile.empty()) return testSettingsFile;
+#endif
+        return HostServerSettingsPath();
+    }
+#ifdef RLC_RUNTIME_TESTING
+    explicit Runtime(const std::filesystem::path& file) : testSettingsFile(file), worker([this] { Run(); }) {}
+    std::filesystem::path testSettingsFile;
+#endif
     Runtime() : worker([this] { Run(); }) {}
     void Log(const Json& entry) {
         Json row = entry;
@@ -150,39 +166,18 @@ private:
     }
     void Run() noexcept {
         try {
-            Json config = Json::object();
-            HMODULE module = nullptr;
-            wchar_t modulePath[32768];
-            if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                    reinterpret_cast<LPCWSTR>(&Runtime::Acquire), &module)) {
-                const auto count = GetModuleFileNameW(module, modulePath, 32768);
-                if (count && count < 32768) {
-                    auto file = std::filesystem::path(modulePath); file.replace_extension(L".json");
-                    std::error_code error;
-                    if (std::filesystem::exists(file, error)) {
-                        if (std::filesystem::file_size(file) > 4096) throw std::runtime_error("connection config exceeds 4 KiB");
-                        std::ifstream input(file);
-                        if (!input) throw std::runtime_error("cannot open connection config");
-                        input >> config;
-                        if (!config.is_object()) throw std::runtime_error("connection config must be object");
-                    }
-                }
+            wchar_t path[32768];
+            const auto length = GetEnvironmentVariableW(L"RLC_WS_LOG", path, 32768);
+            if (length >= 32768) throw std::runtime_error("RLC_WS_LOG path too long");
+            if (length) {
+                log.open(std::filesystem::path(path), std::ios::app);
+                if (!log) throw std::runtime_error("cannot open RLC_WS_LOG");
             }
-            char path[32768];
-            const auto length = GetEnvironmentVariableA("RLC_WS_LOG", path, sizeof(path));
-            if (length && length < sizeof(path)) log.open(path, std::ios::app);
-            else if (config.contains("log")) log.open(std::filesystem::u8path(config.at("log").get<std::string>()), std::ios::app);
-            char portText[16];
-            const auto size = GetEnvironmentVariableA("RLC_WS_PORT", portText, sizeof(portText));
-            unsigned long port = 0;
-            if (size) {
-                if (size >= sizeof(portText)) throw std::runtime_error("invalid RLC_WS_PORT");
-                const std::string portString(portText);
-                if (portString.find_first_not_of("0123456789") != std::string::npos) throw std::runtime_error("invalid RLC_WS_PORT");
-                port = std::stoul(portString);
-            } else if (config.contains("port") && config["port"].is_number_unsigned()) port = config["port"].get<unsigned long>();
-            else { Log({{"event", "disabled"}, {"reason", "port not configured"}}); return; }
-            if (port < 1 || port > 65535) throw std::runtime_error("invalid RLC_WS_PORT");
+            auto file = HostSettingsFile();
+            Log({{"event", "server_settings"}, {"path", file.u8string()}});
+            const auto settings = ReadServerSettings(file);
+            if (!settings.enabled) { Log({{"event", "disabled"}, {"reason", "Resolume Webserver disabled"}}); return; }
+            const auto port = settings.port;
             if (stop.load()) return;
             socket.Connect(static_cast<unsigned short>(port));
             Log({{"event", "connected"}, {"port", port}});

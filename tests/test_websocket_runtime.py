@@ -61,22 +61,72 @@ def quiet(conn):
         conn.settimeout(3)
 
 
+def rejected_settings(executable):
+    with tempfile.TemporaryDirectory() as folder, socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        cases = [
+            (f'<ServerController enabled="0" port="{port}" address="0.0.0.0"/>', "disabled"),
+            (f'<ServerController enabled="1" port="{port}" address="0.0.0.0">', "failure"),
+            ('<ServerController enabled="1" port="0" address="0.0.0.0"/>', "failure"),
+            (None, "failure"),
+        ]
+        for index, (xml, expected) in enumerate(cases):
+            config = Path(folder) / f"server-{index}.xml"
+            if xml is not None:
+                config.write_text(xml)
+            log = Path(folder) / f"runtime-{index}.jsonl"
+            env = dict(os.environ, RLC_WS_PORT=str(port), RLC_WS_LOG=str(log))
+            process = subprocess.Popen([executable, str(config)], stdin=subprocess.PIPE,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+            try:
+                deadline = time.monotonic() + 5
+                rows = []
+                while time.monotonic() < deadline:
+                    if log.exists():
+                        lines = log.read_text().splitlines()
+                        try:
+                            rows = [json.loads(line) for line in lines]
+                        except json.JSONDecodeError:
+                            pass  # writer may be between write and flush
+                        if any(row["event"] == expected for row in rows):
+                            break
+                    time.sleep(0.02)
+                assert any(row["event"] == expected for row in rows), rows
+                assert not any(row["event"] == "connected" for row in rows), rows
+                listener.settimeout(0.1)
+                try:
+                    conn, _ = listener.accept()
+                    conn.close()
+                    raise AssertionError("rejected settings attempted a connection")
+                except socket.timeout:
+                    pass
+                process.communicate("quit\n", timeout=5)
+                assert process.returncode == 0
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+
+
 def main():
     executable = str(Path(sys.argv[1]).resolve())
+    rejected_settings(executable)
     with tempfile.TemporaryDirectory() as folder, socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         listener.listen()
         listener.settimeout(5)
-        log = Path(folder) / "runtime.jsonl"
-        env = dict(os.environ, RLC_WS_PORT=str(listener.getsockname()[1]), RLC_WS_LOG=str(log))
-        if "--config" in sys.argv:
-            copied = Path(folder) / "runtime_smoke.exe"
-            shutil.copy2(executable, copied)
-            executable = str(copied)
-            copied.with_suffix(".json").write_text(json.dumps({"port": listener.getsockname()[1], "log": str(log)}))
-            env.pop("RLC_WS_PORT", None)
-            env.pop("RLC_WS_LOG", None)
-        process = subprocess.Popen([executable], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        log = Path(folder) / "runtime-\u65e5\u672c\u8a9e.jsonl"
+        # Inject only into the test executable; never change the real host preferences.
+        config = Path(folder) / "server.xml"
+        config.write_text(f'<ServerController enabled="1" port="{listener.getsockname()[1]}" address="127.0.0.1"/>')
+        copied = Path(folder) / "runtime_smoke.exe"
+        shutil.copy2(executable, copied)
+        # Obsolete settings must be ignored, even if present and invalid.
+        copied.with_suffix(".json").write_text("not JSON")
+        env = dict(os.environ, RLC_WS_PORT="invalid-obsolete-setting", RLC_WS_LOG=str(log))
+        process = subprocess.Popen([str(copied), str(config)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, text=True, env=env)
         try:
             assert process.stdout.readline().strip() == "ready"
