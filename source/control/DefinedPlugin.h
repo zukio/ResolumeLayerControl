@@ -1,6 +1,4 @@
 #pragma once
-#define NOMINMAX
-#include <objbase.h>
 #include "PassThrough.h"
 #include "Runtime.h"
 #include "DefinitionPolicy.h"
@@ -9,12 +7,7 @@ namespace control {
 class DefinedSource final : public ControlSource {
 public:
     explicit DefinedSource(const Json& d) : definition(d), settings(Defaults(d)) {
-        GUID guid;
-        if (FAILED(CoCreateGuid(&guid))) throw std::runtime_error("instance key generation failed");
-        char text[40];
-        std::snprintf(text,sizeof(text),"%08lx-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",guid.Data1,guid.Data2,guid.Data3,
-            guid.Data4[0],guid.Data4[1],guid.Data4[2],guid.Data4[3],guid.Data4[4],guid.Data4[5],guid.Data4[6],guid.Data4[7]);
-        SetKey(text);
+        SetKey(NewInstanceKey());
     }
     Evaluation Evaluate(const Json& c) override {
         std::lock_guard<std::mutex> lock(mutex);

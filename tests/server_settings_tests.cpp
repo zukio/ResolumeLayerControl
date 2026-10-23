@@ -1,10 +1,9 @@
 #include "../source/control/ServerSettings.h"
 #include <iostream>
+#include "../source/control/Platform.h"
 
 int main() {
-    wchar_t temp[MAX_PATH], name[MAX_PATH];
-    if (!GetTempPathW(MAX_PATH, temp) || !GetTempFileNameW(temp, L"rlc", 0, name)) return 1;
-    const std::filesystem::path file(name);
+    const auto file = std::filesystem::temp_directory_path() / ("rlc-settings-" + control::NewInstanceKey() + ".xml");
     int failures = 0;
     auto check = [&](const std::string& xml, bool valid, unsigned short port = 8080, bool enabled = true) {
         { std::ofstream out(file, std::ios::binary); out << xml; }
@@ -28,12 +27,17 @@ int main() {
     check("<!DOCTYPE ServerController [<!ENTITY port '8080'>]><ServerController enabled='1' port='&port;' address='0.0.0.0'/>", false);
     check(std::string(65537, ' '), false);
     check("", false);
+    check("<ServerController xmlns='other' enabled='1' port='8080' address='0.0.0.0'/>", false);
+    std::string deep = "<ServerController enabled='1' port='8080' address='0.0.0.0'>";
+    for (int i = 0; i < 17; ++i) deep += "<child>";
+    for (int i = 0; i < 17; ++i) deep += "</child>";
+    check(deep + "</ServerController>", false);
     std::filesystem::remove(file);
     try { control::ReadServerSettings(file); ++failures; } catch (...) {}
     const auto documents = std::filesystem::path(L"D:/Moved Documents");
-    if (control::ServerSettingsPath(documents, L"C:/Program Files/Resolume Arena/ARENA.EXE") !=
+    if (control::ServerSettingsPath(documents) !=
         documents / L"Resolume Arena/Preferences/server.xml") ++failures;
-    try { control::ServerSettingsPath(documents, L"Avenue.exe"); ++failures; } catch (...) {}
+
     std::cout << "server settings failures: " << failures << '\n';
     return failures ? 1 : 0;
 }

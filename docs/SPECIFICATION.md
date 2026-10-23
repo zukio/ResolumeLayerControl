@@ -28,6 +28,8 @@ WebSocket専用の`Layer Control`を旧OSC診断Probeとは別DLLとして追加
 
 ### 2026-10-23 設計方針（この版の基準）
 
+- Windows／Mac共通化：制御ロジック・WebSocket++／Asio通信・TinyXML-2によるXML解析・ファイルログを共用し、設定場所取得等だけをOSアダプターへ分離する。同じソースからDLL／bundleをビルドする。Windows側もWinHTTPを廃止する。MacのDocuments配置は公式資料確認済みだがserver.xml形式・実行名・ビルド・ホスト動作は実機未検証。[ADR-001](ADR-001-CROSS-PLATFORM.md)を参照。以下のArena.exeの確認はWindows側に適用し、Mac側はArena／Resolume Arenaという実行名候補を検査する。
+- 共通通信の送信成功ログは有限キューへの受理を示す。実送信完了・応答・読戻し・映像適用と区別する。受信は1メッセージ16 MiB、待機32件／32 MiB、送信待機1 MiBを上限とし、超過で制御を停止する。
 - 接続設定：本体Webserver設定読取りを標準とし、DLL隣接JSONと`RLC_WS_PORT`を廃止する。WindowsのDocuments既知フォルダー配下の`Resolume Arena/Preferences/server.xml`をRuntime開始時にワーカーで一度だけ読む。実測したArena.exe／Arena 7.27.1の形式を対象とし、他ホストは接続しない。`enabled`は0/1、`port`は1〜65535、`address`は0.0.0.0／127.0.0.1のみ受理し、接続先は127.0.0.1固定。ログは任意の`RLC_WS_LOG`だけで指定する。XML不明・不正時の既定ポートへのフォールバックはしない。保存時期・起動順序は実機未検証。ポート変更の監視・自動再接続は追加しない。[VALIDATION.md](VALIDATION.md)を参照。
 
 - **適用契機はResolume WebSocketのComposition状態通知とする。** 定期ポーリングやFFGLの`Connect()`・`SetTime()`によるトリガー推定を基本方式にしない。

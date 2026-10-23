@@ -6,8 +6,9 @@
 
 | 場所 | 責務 | 別プラグインへの流用 |
 | --- | --- | --- |
-| `source/control/ServerSettings.h` | Documents既知フォルダー・ホスト確認、本体server.xmlの有限サイズ読取りと検査 | Windows／実測Arena形式のみ |
-| `source/control/WebSocket.h` | Windows WinHTTP、ローカル接続、分割受信、送信、終了 | そのまま利用。Windows以外ではこのアダプターを交換 |
+| `source/control/ServerSettings.h` | TinyXML-2による本体server.xmlの有限サイズ読取りと検査 | 両OS共通。Macの実ファイル形式は未検証 |
+| `source/control/Platform.h`とWindows.cpp／Mac.mm | Documents・ホスト・環境変数文字列・デバッグ出力・UUID | OS固有処理だけを分離 |
+| `source/control/WebSocket.h/.cpp` | WebSocket++／Asio、ローカル接続、分割受信、送信、終了 | 両OS共通。Windows側もWinHTTPを廃止 |
 | `source/control/Composition.h` | Composition判別、実行時キーからClipを解決、Active判定、パラメータIDの検査 | Resolume連携の共通部分 |
 | `source/control/StateReconciler.h` | 現在値との差分、競合・未完了・失敗要求の抑止 | LayerやFFGLを知らない純粋ロジック |
 | `source/control/Runtime.h` | DLL内の共有接続、ControlSourceの評価、通知処理、読戻し、診断 | 新しいControlSourceも同じ基盤へ登録可能 |
@@ -35,7 +36,7 @@
 - 実測・公式資料で確認した、接続直後および変更時のトップレベル`layers`付きCompositionを入力とする。未確認の`subscribe /composition`を創作しない。必要なComposition通知が来ない操作は未対応として実機で記録する。
 - 個別の`parameter_update`は読戻しの確認にのみ利用する。位置更新を含め、それだけで新しい同期を開始しない。
 - 1 DLLにつきRuntimeを共有。最大128インスタンス、未完了／失敗pathは合計384件、受信メッセージは16 MiBまで。
-- 送信キューは持たない。通知の評価結果だけをその場で送信し、直前にSourceのrevisionを再確認する。編集・終了による古い候補は破棄する。
+- 通知の評価結果を送信キューへ渡す直前にSourceのrevisionを再確認する。ライブラリの送信待機量は1 MiB、受信待機は32件／32 MiBに制限する。`set_sent`はキュー受理であり、送信完了やホスト反映ではない。編集・終了による古い評価候補は破棄する。すでに渡した要求の取消しは保証しない。
 - 送信済み要求は取り消せない。サーバー側で起きた切替をまだ受信していない間の送信や、評価と送信の間のホスト変更を原子的には防げない。高速切替はAT-13で検証する。
 - `set`送信後にWebSocketの`get`を送り、`parameter_set`応答とは別に値を確認する。不一致の読戻しで同じ要求を再送しない。
 - 5秒を過ぎた未完了要求は、次の受信時にタイムアウトとして隔離する。受信が途絶えれば期限の記録も遅れる。タイムアウトを契機にset／getを再送しない。

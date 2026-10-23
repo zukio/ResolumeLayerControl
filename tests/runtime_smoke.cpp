@@ -14,10 +14,10 @@ public:
     std::atomic<bool> enabled{true};
     std::atomic<std::uint64_t> revision{0};
 };
-int wmain(int argc, wchar_t** argv) {
+int main(int argc, char** argv) {
     try {
         auto source = std::make_shared<TestSource>();
-        auto runtime = argc == 2 ? control::Runtime::ForTest(argv[1]) : control::Runtime::Acquire(); runtime->Add(source);
+        auto runtime = argc == 2 ? control::Runtime::ForTest(std::filesystem::u8path(argv[1])) : control::Runtime::Acquire(); runtime->Add(source);
         std::cout << "ready" << std::endl;
         std::string command;
         while (std::getline(std::cin, command)) {

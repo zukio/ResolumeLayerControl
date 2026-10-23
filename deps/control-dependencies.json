@@ -1,0 +1,20 @@
+[
+  {
+    "name": "websocketpp",
+    "tag": "0.8.2",
+    "url": "https://codeload.github.com/zaphoyd/websocketpp/zip/refs/tags/0.8.2",
+    "sha256": "0281b1d1278f01138805279fd2277901ae3c71b76e28364575356061098111c6"
+  },
+  {
+    "name": "asio",
+    "tag": "asio-1-28-0",
+    "url": "https://codeload.github.com/chriskohlhoff/asio/zip/refs/tags/asio-1-28-0",
+    "sha256": "5c2af07ef73b42a2d48e34c0ecbf41cd40dc823bc681bf5833c129384999c963"
+  },
+  {
+    "name": "tinyxml2",
+    "tag": "10.0.0",
+    "url": "https://codeload.github.com/leethomason/tinyxml2/zip/refs/tags/10.0.0",
+    "sha256": "6c60b185d3570d37196d5bde17ca4f63b44a9936b515450db75ac8de5e560910"
+  }
+]

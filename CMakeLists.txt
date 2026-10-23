@@ -3,6 +3,10 @@ project(FFGL-SDK
     VERSION 2.2
     LANGUAGES CXX
 )
+if(MSVC)
+    # Match the vendored static GLEW and the maintained Release vcxproj builds.
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 # resolve dependencies if using vcpkg
 if (EXISTS CACHE{VCPKG_MANIFEST_FILE})
@@ -26,8 +30,22 @@ target_compile_features(ffgl-sdk PUBLIC cxx_std_11)
 
 # we need glew (except on macOS)
 if (NOT APPLE)
-    find_package(GLEW REQUIRED)
-    target_link_libraries(ffgl-sdk PRIVATE GLEW::GLEW)
+    if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_library(GLEW::GLEW STATIC IMPORTED)
+        set_target_properties(GLEW::GLEW PROPERTIES
+            IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/deps/glew-2.1.0/lib/Release/x64/glew32s.lib"
+            INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/deps/glew-2.1.0/include"
+            INTERFACE_COMPILE_DEFINITIONS GLEW_STATIC)
+    else()
+        find_package(GLEW REQUIRED)
+    endif()
+    target_link_libraries(ffgl-sdk PUBLIC GLEW::GLEW)
+    if(WIN32)
+        target_link_libraries(ffgl-sdk PUBLIC opengl32)
+    endif()
+else()
+    target_link_libraries(ffgl-sdk PUBLIC "-framework OpenGL" "-framework AppKit")
+    set_target_properties(ffgl-sdk PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif()
 
 include(GNUInstallDirs)
@@ -86,8 +104,15 @@ endif()
 # should we build the example plugins? we do this by default
 # if building the project directly, but not when adding ffgl
 # to another project
-option(FFGL_BUILD_EXAMPLE_PLUGINS ${FFGL_MASTER_PROJECT} "Build the example FFGL plugins")
+option(FFGL_BUILD_EXAMPLE_PLUGINS "Build the example FFGL plugins" ${FFGL_MASTER_PROJECT})
 
 if (${FFGL_BUILD_EXAMPLE_PLUGINS})
     add_subdirectory(source/plugins)
+endif()
+
+# Build the maintained plugins without pulling in the SDK examples.
+option(RLC_BUILD_PLUGINS "Build Layer Control and Layer Mask Control" ON)
+if(RLC_BUILD_PLUGINS AND NOT FFGL_BUILD_EXAMPLE_PLUGINS)
+    add_subdirectory(source/plugins/LayerControl)
+    add_subdirectory(source/plugins/LayerMaskControl)
 endif()

@@ -4,6 +4,7 @@
 
 ## 根拠
 
+- 共通通信化（2026-10-23）：Windows／MacともWebSocket++／Asioを使う。設定場所はOSのDocuments取得APIから解決する。MacのDocuments配置は公式Directory Listで確認、server.xml形式・ホスト実行名・実接続は未検証。`set_sent`は送信キュー受理、成功判定は従来どおり読戻しと別に行う。
 - `docs/evidence/ws-native-plugin-20261023.json`に保存した実受信Composition。Clip内のEffectとparams、Layerのtransition／maskmodeを解析した。
 - Node-REDによるTransition／Mask設定成功は仕様書冒頭の利用者報告。新DLLによる実機成功とは区別する。
 - [Resolume公式WebSocket API](https://resolume.com/support/en/websocket-api)でendpoint、接続直後のComposition、`get`／`set`、by-id、応答typeを確認（2026-10-23、版固定資料ではない）。

@@ -1,11 +1,13 @@
 #pragma once
 #include "Composition.h"
 #include "WebSocket.h"
+#include "Platform.h"
 #include "ServerSettings.h"
 #include <atomic>
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <chrono>
 #include <filesystem>
@@ -71,7 +73,7 @@ private:
         row["wall_ms"] = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         const auto text = row.dump();
-        OutputDebugStringA(("LayerControl " + text + "\n").c_str());
+        DebugLog("LayerControl " + text + "\n");
         if (log.is_open() && logBytes < 16 * 1024 * 1024) { log << text << '\n'; log.flush(); logBytes += text.size() + 1; }
     }
     std::vector<std::shared_ptr<ControlSource>> Sources() {
@@ -166,11 +168,9 @@ private:
     }
     void Run() noexcept {
         try {
-            wchar_t path[32768];
-            const auto length = GetEnvironmentVariableW(L"RLC_WS_LOG", path, 32768);
-            if (length >= 32768) throw std::runtime_error("RLC_WS_LOG path too long");
-            if (length) {
-                log.open(std::filesystem::path(path), std::ios::app);
+            const auto path = LogPathFromEnvironment();
+            if (!path.empty()) {
+                log.open(path, std::ios::app);
                 if (!log) throw std::runtime_error("cannot open RLC_WS_LOG");
             }
             auto file = HostSettingsFile();
@@ -211,7 +211,7 @@ private:
         } catch (const std::exception& e) {
             try { Log({{"event", "failure"}, {"reason", e.what()}}); } catch (...) {}
         } catch (...) {}
-        socket.Cancel();
+        socket.Shutdown();
     }
     std::mutex mutex;
     std::vector<std::weak_ptr<ControlSource>> sources;

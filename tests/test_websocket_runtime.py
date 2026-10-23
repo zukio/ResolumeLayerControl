@@ -1,4 +1,4 @@
-"""WinHTTP against a local RFC6455 test server; NOT a Resolume acceptance test."""
+"""Common WebSocket against a local RFC6455 test server; NOT a Resolume acceptance test."""
 import base64
 import hashlib
 import json
@@ -121,7 +121,7 @@ def main():
         # Inject only into the test executable; never change the real host preferences.
         config = Path(folder) / "server.xml"
         config.write_text(f'<ServerController enabled="1" port="{listener.getsockname()[1]}" address="127.0.0.1"/>')
-        copied = Path(folder) / "runtime_smoke.exe"
+        copied = Path(folder) / ("runtime_smoke" + Path(executable).suffix)
         shutil.copy2(executable, copied)
         # Obsolete settings must be ignored, even if present and invalid.
         copied.with_suffix(".json").write_text("not JSON")
@@ -184,7 +184,7 @@ def main():
             assert sum(row["event"] == "restore_sent" for row in rows) == 1
             assert sum(row["event"] == "readback" for row in rows) == 2
             assert not any(row["event"] == "failure" for row in rows), rows
-            print("WinHTTP integration passed: fragmented receive, difference-only set, readback, no loop, inactive/disabled, cancellation")
+            print("Common WebSocket integration passed: fragmented receive, difference-only set, readback, no loop, inactive/disabled, cancellation")
         finally:
             if process.poll() is None:
                 process.kill()

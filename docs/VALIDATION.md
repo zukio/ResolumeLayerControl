@@ -1,5 +1,16 @@
 # 検証記録
 
+## Windows／Mac共通コードへの移行（2026-10-23）
+
+- Windows専用のWinHTTP／XmlLiteを削除し、両OSでWebSocket++ 0.8.2＋standalone Asio 1.28.0、TinyXML-2 10.0.0を使用。Runtime・差分同期・復元・ログファイル処理を共用。OSアダプターはDocuments取得、ホスト名検査、環境変数の文字列変換、デバッグ出力、UUID生成のみ。依存の取得元・ハッシュは`deps/control-dependencies.json`、ライセンスは`deps/CONTROL-LICENSES.txt`。
+- Windows 10.0.26300、VS2022／MSVC 19.44.35226、SDK 10.0.28000.0で共通Runtimeとテストをビルド。`ctest --test-dir build-control-tests -C Release --output-on-failure`は5件全合格（control_logic、definition_validation、websocket_transport、websocket_runtime、server_settings）。
+- 通信試験：分割Composition受信、差分送信、応答と読戻しの区別、復元、自己通知収束、位置通知抑止、待受中キャンセルに加え、接続ハンドシェイク中のキャンセル、HTTP拒否、ping/pong、バイナリ拒否、16 MiB超過フレームの拒否、peer closeを確認。実サーバーと同じRFC6455を使うローカルテストであり、Arena受入試験ではない。
+- 設定試験：欠損、不正XML、無効状態、ポート境界、非対応アドレス、DTD、複数ルート、属性重複、深すぎるXML、非対応名前空間を拒否。旧JSON・RLC_WS_PORTを無視し、日本語パスのログを作成する既存試験も共通実装で合格。
+- Windows用Visual Studioソリューションで両DLLのビルドに成功。WebSocket++の整数縮小警告C4267と既存GLEWのPDB警告LNK4099あり。新しい共用CMake構成でも`ffgl-plugin-layer-control`／`ffgl-plugin-layer-mask-control`のRelease DLL生成に成功。静的GLEWに合わせCRTを統一し、初回に出たLNK4098は修正後のCMakeビルドで解消。
+- Mac用CMakeはFoundation／OpenGLをリンクし、MODULEを`.bundle`として生成する設定とInfo.plistを追加。同じテストをMacでも実行できる構成にした。ただしこの環境にはMac実機・Xcodeがなく、Macビルド・bundleのロード・Mac実行名・server.xml形式は未検証。Documents配置だけは[公式Directory List](https://resolume.com/support/en/directory-list)で確認した。
+- 再現：Windows／Macのコマンドは[SETUP.md](SETUP.md)。Macではまず共通テストとbundleビルド、ホスト実行名・本体設定との照合を行う。両OSで新プラグインの接続、読戻し、終了、パススルー映像、AT-02同Column反映を別途実機試験する。署名・公証・配布試験も未実施。今回はホストへ導入していない。
+- `set_sent`／`restore_sent`はライブラリの送信キュー受理を示し、実送信完了・ホスト反映とは区別する。読戻し確認を維持し、自動再接続・再送・ポーリングは追加していない。設計判断は[ADR-001](ADR-001-CROSS-PLATFORM.md)。
+
 ## 本体設定読取りへの移行実装（2026-10-23）
 
 - 利用者の追記：前項調査時の接続失敗はArena未起動によるもの。保存設定の読取り不良とは扱わない。
