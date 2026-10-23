@@ -1,6 +1,30 @@
 # Resolume Layer設定制御プラグイン 仕様・設計書
 
-文書版：0.2 ／ 初版：2026-10-22 ／ 改訂日：2026-10-23 ／ 状態：状態同期方式の設計案（実装・実機受入未完了）
+文書版：0.4 ／ 初版：2026-10-22 ／ 改訂日：2026-10-23 ／ 状態：状態同期方式の検証用実装あり（実機受入未完了）
+
+### 0. 範囲の整理（0.4版で改訂）
+
+依頼の本題は、**Layer TransitionのBlend ModeとDurationをColumnのトリガーで切り替えること**（Target Layer、Transition Blend Mode、Durationの3項目）である。Mask Modeは「ついでのご相談」であり、実現可否が不明な別機能として扱う。
+
+- **初版の対象は`Layer Control`のみとする。** 項目はEnabled、Target Layer、Duration、Transition Blend（表示名。FFGLの名称制限16文字のため「Mode」を省く）に限る。Instance Keyは内部識別用で編集しない。
+- **Maskは別プラグイン`Layer Mask Control`として分離し、初版の合否に含めない。** 項目はEnabled、Target Layer、Mask Modeとする。
+- TransitionとMaskはTarget Layerを共用しない。対象Layerが異なり得るため、各プラグインが独自のTarget Layerを持つ。
+- 旧案の`Apply Transition`／`Apply Mask`は廃止する。使わない機能はそのプラグインを置かないことで表す。`Enabled`は各プラグインに残す。
+- Resolumeが全Effectに付ける共通項目（Blend Mode、Opacity）は本機能と無関係である。
+- 以下、4.2（Mask）、AT-09〜AT-11、UNK-03、段階4は**第2段階（Layer Mask Control）**の内容であり、初版の合否や完成報告に含めない。
+
+### 2026-10-23 実装状況と追加した設計判断
+
+WebSocket専用の`Layer Control`を旧OSC診断Probeとは別DLLとして追加した。共通の通信・Composition解析・Clip Resolver・差分同期・診断・映像パススルーと、今回固有のTransition／Maskポリシー・FFGL UIを分離した。構造と拡張方法は[ARCHITECTURE.md](ARCHITECTURE.md)、実測対応は[PROTOCOL_MAP.md](PROTOCOL_MAP.md)、ビルドと試験は[SETUP.md](SETUP.md)を参照。
+
+- Clip対応付けは実行時GUIDを`Instance Key`テキストパラメータとして公開し、Composition内で一意に観測できた場合だけ成立とする設計案。復元／複製された旧キーは採用しない。FFGL VALUEイベントによるArena側への伝播は実機未検証。曖昧・不在なら送信しない。
+- 記録に存在する50種類のTransition選択肢とDuration 0〜10秒を検証用UIへ採用。送信時は最新Compositionの型・options・min/max・IDも検査する。未知値を補正しない。
+- Group入りCompositionは番号対応の実機確認まで送信しない。Target Layer UI上限1024は実装の上限であり、ホストの最大Layer数を意味しない。
+- Webserverポートは環境変数で明示し、未設定なら接続しない。DLL内で接続を共有し、受信メッセージ／インスタンス／未完了要求を有限にする。自動再接続・自動再送は初版では行わない。
+- 同一項目を複数のActive Sourceが要求した場合は送信を抑止する。新しい通知をまだ受信していない間のホスト側変更、および送信済み要求の取消は保証しない。
+- Windows Release DLLのビルド、合成状態・保存ログを使うC++試験、ローカルWebSocketサーバーとの通信試験を実施。これは段階2のClip対応付けやAT-02の映像反映の合格ではない。段階2の未検証条件を残し、独立に試験できる基盤を実装した段階である。
+
+利用者が任意のコマンドを入力するUIは追加しない。ひな型としての拡張はコード側のポリシー交換で行い、追加項目も実値の取得・差分・Active条件を検証する。
 
 ### 2026-10-23 設計方針（この版の基準）
 
@@ -8,7 +32,7 @@
 - 通知を受けたら、**対象の制御用Effect Clipが本番出力でActiveか**、そのClipの**指定値とTarget Layerの実際の現在値が異なるか**を照合する。Activeかつ不一致の項目だけWebSocketの`set`で同期する。
 - **再トリガーと再生中のパラメータ編集を識別する必要はない。** どちらもActive中の状態同期として扱う。元仕様の「1トリガーにつき1回送信」は廃止する。
 - **一致項目は送信しない。** 比較に使うのは「最後に送った値」ではなく、Resolumeから取得したTarget Layerの現在値である。外部からの手動変更を見落とさない。
-- 未再生・プレビュー専用のClipはLayer設定を変更しない。Clip停止時に旧値へ自動復元しない。
+- 未再生・プレビュー専用のClipはLayer設定を変更しない。**Clipが非Activeになった（または無効化・削除された）ら、適用前にTarget Layerが持っていた値（ベースライン）へ戻す。** 同じ項目を別のLayer Control ClipがActiveで管理している間は復元せず、そのClipの値へ切り替えるだけとする。何も管理しなくなった時だけ復元する（0.4版で変更。旧：自動復元しない）。
 - PluginとResolume間の受信・送信はWebSocketに統一する。既存の外部OSC運用には介入せず、プラグインからOSCを送信する互換経路は実装しない。
 
 ### この版が根拠にする既存の実測
@@ -23,13 +47,13 @@
 
 ## 1. 目的と完成条件
 
-ResolumeのColumnに置いた制御用Effect Clipの設定に従い、指定LayerのTransition設定とMask Modeを自動調整する。設定内容はResolumeのFFGLパラメータUIから編集・保存する。
+ResolumeのColumnに置いた制御用Effect Clipの設定に従い、指定LayerのTransition設定（初版）を自動調整する。Mask Modeの調整は第2段階の別プラグインで扱う。設定内容はResolumeのFFGLパラメータUIから編集・保存する。
 
 **完成条件はトリガー回数の検出ではなく、Activeな制御用Effect Clipの指定値とTarget Layerの実値が同期すること。** Composition通知で照合し、一致している間は送信せず、不一致なら設定を更新する。Active中のパラメータ編集も適用対象とし、未再生・プレビュー専用Clipの設定は本番へ適用しない。
 
 ただしColumnトリガーで始まる映像切替については、**その回のTransitionに新しい方式・時間が使われること**を完成条件として維持する。通知後の変更がTransition開始に間に合うかは未検証であり、状態同期の成功だけでこの条件の達成を主張しない。
 
-Mask制御は、同じLayerを通常映像とマスク用で切り替えることで、役割切替だけのLayerやGroupを減らすことを目指す。削減数は保証しない。
+（第2段階）Mask制御は、同じLayerを通常映像とマスク用で切り替えることで、役割切替だけのLayerやGroupを減らすことを目指す。削減数は保証しない。
 
 ## 2. 用語と区別
 
@@ -55,8 +79,8 @@ Mask制御は、同じLayerを通常映像とマスク用で切り替えるこ�
 | --- | --- |
 | REQ-01 | Columnごとに異なるLayer設定を持たせる |
 | REQ-02 | ResolumeのUIで対象Layerと変更内容を編集・保存する |
-| REQ-03 | Target Layer、Transition Blend Mode、Durationを指定する |
-| REQ-04 | Target LayerのMask ModeをDisabled／One Below／All Belowから指定する |
+| REQ-03 | Target Layer、Transition Blend Mode、Durationを指定する（**初版の対象**） |
+| REQ-04 | （第2段階・別プラグイン`Layer Mask Control`）独自のTarget LayerのMask ModeをDisabled／One Below／All Belowから指定する。初版の合否に含めない |
 | REQ-05 | Composition通知を契機にActiveな制御用Effect ClipとTarget Layerの状態を照合し、差分だけをWebSocketで適用する。再トリガー単位の送信回数は数えない |
 | REQ-06 | 制御目的のClipが意図しない映像変化や既存Clipの停止を起こさない |
 | REQ-07 | 通常操作ではWebSocketのパスや生コマンドを管理させず、Layer番号と意味のある選択肢で設定する |
@@ -88,8 +112,8 @@ Mask制御は、同じLayerを通常映像とマスク用で切り替えるこ�
 | PRE-02 | 同一PCのResolumeへWebSocket接続する（例：127.0.0.1） | Webserverのポート、起動順、再接続手順 |
 | PRE-03 | WebSocketのComposition購読を同期の契機にし、差分を`set`で書き込む | 通知形式、状態の鮮度、送信後通知、エラー応答 |
 | PRE-04 | 1インスタンスは1つのTarget Layerを制御する | 複数Layer指定は初版の範囲外 |
-| PRE-05 | TransitionとMaskの適用有無を個別に選べる | FFGLパラメータ型・UI |
-| PRE-06 | 適用した値をClip停止時に自動復元しない | 運用上の受入 |
+| PRE-05 | TransitionとMaskは別プラグインとし、Target Layerを共用しない。Apply項目は持たない | 4.3、4.5 |
+| PRE-06 | 非Active化後に、適用直前の値（ベースライン）へ復元する。ベースラインは最初の変更前の実値で、Runtime内メモリのみ（保存しない）。復元は送信後に破棄し再送しない | 実機でのActive外れ検出、Runtime終了時（最後のインスタンス削除）は復元されない |
 | PRE-07 | 検証時は制御用Effect Clipの配置Layerを確保する | 既存Clipとの競合、映像影響 |
 | PRE-08 | Active判定の候補はClipの`connected.value` | `Connected`・`Previewing`の状態遷移と再生実態を実測 |
 | PRE-09 | 対象値の読戻しは通知の最新状態またはWebSocketからの取得で行う | 実際の値を古いスナップショットと取り違えない方法 |
@@ -125,7 +149,7 @@ Blend Mode候補は対象版で確認した一覧を使う。表示名と外部�
 
 DurationはUI・内部モデルとも秒として扱う。送信時に必要な単位変換や正規化は通信側で行う。0秒、上限、精度を対象版で確認する。マニュアルのスライダー例だけからAPIの有効範囲を決定しない。
 
-### 4.2 Mask Mode制御
+### 4.2 Mask Mode制御（第2段階・`Layer Mask Control`。初版の範囲外）
 
 | 要求上の指定 | 意図する動作 |
 | --- | --- |
@@ -149,19 +173,28 @@ DurationはUI・内部モデルとも秒として扱う。送信時に必要な�
 
 ### 4.3 パラメータ案
 
-1プラグイン内にTransitionとMaskをまとめる。FFGLパラメータをResolumeで編集・保存する。
+TransitionとMaskは別プラグインとし、Target Layerを共用しない。FFGLパラメータをResolumeで編集・保存する。
 
-| 表示名案 | 型・意味 | 初期状態案 |
+**Layer Control（初版）**
+
+| 表示名 | 型・意味 | 初期状態 |
 | --- | --- | --- |
-| Enabled | 状態同期の有効／無効 | 無効（配置・初回読込だけで送信しない） |
+| Enabled | 状態同期の有効／無効 | **有効**（0.4版で変更。初期化・読込・配置だけでは送信せず、Activeな間だけ反映する） |
 | Target Layer | 利用者が認識するLayer番号 | 1 |
-| Apply Transition | Transitionの同期有無 | 有効 |
-| Blend Mode | 検証済み選択肢から選ぶ | Alpha |
-| Duration | 秒数 | 1.000秒（範囲・精度は実測で確定） |
-| Apply Mask | Mask Modeの同期有無 | 無効 |
-| Mask Mode | Disabled／One Below／All Below | Disabled |
+| Duration | Transitionの秒数 | 1.000秒（範囲0〜10。精度は実測で確定） |
+| Transition Blend | 検証済み選択肢（50種）から選ぶTransition方式。Layer Blend Modeではない | Alpha |
+| Instance Key | Clip識別用の内部値。編集しない | 自動生成 |
 
-`Apply Mask = Off`は「Mask Modeを変更しない」であり、`Disabled`への変更とは異なる。両方のApplyがOffなら書き込まない。
+**Layer Mask Control（第2段階）**
+
+| 表示名 | 型・意味 | 初期状態 |
+| --- | --- | --- |
+| Enabled | 状態同期の有効／無効 | 無効 |
+| Target Layer | Mask Modeを変更する側のLayer番号（Layer Controlとは独立） | 1 |
+| Mask Mode | Disabled／One Below／All Below。「変更しない」状態は持たず、使わないときはEnabledをOffにする | Disabled |
+| Instance Key | 内部値 | 自動生成 |
+
+ResolumeがEffectごとに付けるBlend Mode／Opacityは本プラグインの項目ではない。
 
 プラグイン内部の接続設定はWebSocket用に統一し、OSCアドレスの編集機能は実装しない。ポートはResolume Webserverの設定と合わせる。変更対象のLayerやパラメータIDはCompositionのデータから解決し、実行間で同一IDが維持されると仮定しない。
 
@@ -183,7 +216,7 @@ Activeな制御用Effect Clipのパラメータ編集は、次に受信したCom
 | 未再生Clipの編集・選択・プレビュー | Target Layerを変更しない |
 | Target Layerの設定を手動変更 | Active中の次のComposition通知で実値との差分を照合し、必要なら指定値へ戻す（通知が届くか未検証） |
 | 通常ループ、位置更新、フレーム描画 | これら単独では設定を送信しない |
-| Clip停止・Eject・別Clipへの切替 | 自動復元しない。ActiveでなくなったClipは同期しない |
+| Clip停止・Eject・別Clipへの切替 | ActiveでなくなったClipは同期しない。同じ項目を管理するActiveなClipが他になければ、次のComposition通知でベースラインへ復元する。他にActiveなClipがあればそのClipの値へ切り替える（復元しない） |
 | 再初期化・読込 | それだけで無条件送信しない。ただしActiveなClipについてComposition通知があれば同期対象となる |
 
 Active判定はClipの`connected.value`を候補とする。`selected`やColumnのUI選択状態では判定しない。**`connected`が本番再生を正確に表すこと、FFGLインスタンスとClip IDが対応付くことは未検証**である。
@@ -193,6 +226,31 @@ Active判定はClipの`connected.value`を候補とする。`selected`やColumn�
 WebSocketの`set`で発生した通知も入力になり得る。再同期の前には取得できる新しい実値を比較し、一致したら送信を止める。更新未反映・応答待ちの間に同じ差分要求を多重送信しないよう、保留中要求を管理する。通知が古い場合の読戻し・確定判定は検証する。
 
 **Composition状態通知と再生位置の`parameter_update`を区別する。** 再生位置通知を契機とした連続`set`や、位置の巻き戻りからの再トリガー推定は行わない。
+
+### 4.5 機能定義JSONと共通基盤
+
+**共通のC++基盤と、JSONで記述する機能定義を分ける。** 通信、Clip識別、Active判定、実値比較、重複送信防止、映像パススルーは共通C++が担当し、プラグインごとの項目と対応はJSON（`definitions/*.json`）で定義する。ビルド時にJSONを検査し、FFGLパラメータ定義と制御設定を生成する（`tools/generate_plugin.py`）。実行中にUI構成が変わらないため、保存済みCompositionとの互換性を管理しやすい。
+
+JSONで管理する情報：
+
+- プラグイン名・固有ID
+- UI項目の名前・型・初期値・選択肢・範囲
+- Target Layerとの対応（`role: target`）
+- Compositionから読む項目と設定する項目（`property`）
+- 単位変換・比較精度（`tolerance`）・適用条件
+
+例（Duration。設計例であり実ファイルが正）：
+
+```json
+{ "id": 2, "key": "duration", "label": "Duration", "type": "number",
+  "default": 1, "min": 0, "max": 10,
+  "property": "transition.duration", "tolerance": 0.000001 }
+```
+
+- `property`は開発者向けの論理名である。実際のWebSocketパラメータIDは、その都度Compositionから解決する。
+- 項目の`id`はFFGLパラメータ番号で、削除した番号は再利用せず予約として残す（生成時に検査する）。公開後に番号・型・選択肢の意味を変えない。
+- 既存の型（boolean／integer／number／choice／text）と制御方式に収まる追加は、JSONの編集と再ビルドで行える。新しい動作方式はC++側の追加が必要。
+- FFGLの表示名は16文字以内。
 
 ## 5. 設計案
 
@@ -219,7 +277,7 @@ WebSocketの`set`で発生した通知も入力になり得る。再同期の前
 5. Target Layerの**実際の現在値**を、取得した最新Composition状態または有効なWebSocket照会で確認する。古いキャッシュ／最後の送信値で代用しない。
 6. 値とLayer対応を検査し、指定値と一致しない項目だけ`set`要求を生成する。全部一致なら何もしない。
 7. WebSocketで差分を送信し、応答と読戻しを区別して記録する。未完了の同じ差分要求を重ねない。
-8. 次のComposition通知でも同じ照合を行う。Clip停止時には旧値を復元しない。
+8. 次のComposition通知でも同じ照合を行う。管理するActiveなClipがなくなった項目は、取得した実値がベースラインと異なる場合だけ`set`で復元する（Clip評価に失敗した通知では復元しない）。
 
 対象Layerが存在しない、Clip対応付けが曖昧、状態が不明、値が不正な場合は別Layerへ代用せず送信しない。
 
@@ -284,14 +342,14 @@ FFGLパラメータをResolumeに保持させる方式を第一候補とする�
 | 1：WebSocket変更確認 | Transition方式・時間・Maskの`set`と読戻し、反映順序を確認 | Node-REDでの変更成功報告はあり、最新値の取得・今回のTransitionへの反映は別に判定 |
 | 2：通知・Clip同定 | Composition購読、`connected`の状態遷移、FFGLインスタンスとClip IDの対応を観測 | UNK-04・09・12の成立可否が明確 |
 | 3：状態同期実装 | FFGLパラメータ、Active Gate、差分比較、WebSocket `set`、重複抑止を統合 | AT-01〜AT-06、AT-12の関連項目を満たす |
-| 4：Mask・映像影響 | Mask各状態、動画、Group、パススルー、切替タイミングを試験 | 試験で保証できる構成を特定 |
+| 4（第2段階・初版外）：Mask・映像影響 | `Layer Mask Control`でMask各状態、動画、Group、パススルー、切替タイミングを試験 | 試験で保証できる構成を特定 |
 | 5：運用整理 | 接続・エラー・負荷・ログ・制限を記録 | 未確認項目が明示される |
 
 次の優先作業は**Composition通知からの対象ClipのActive判定と、Target Layerの最新実値の取得・差分照合**である。再トリガー専用イベント探しは進行条件にしない。
 
 ## 8. 受入試験
 
-以下は実装の合格条件であり、記載だけで試験実施済みとはしない。Node-RED単体のWebSocket設定成功とプラグインの受入試験を区別する。
+以下は実装の合格条件であり、記載だけで試験実施済みとはしない。**初版（Layer Control）の対象はAT-09〜AT-11（Mask）を除く項目。** AT-09〜AT-11は第2段階の`Layer Mask Control`の試験とする。Node-RED単体のWebSocket設定成功とプラグインの受入試験を区別する。
 
 | ID | 試験 | 合格条件 |
 | --- | --- | --- |
@@ -302,7 +360,7 @@ FFGLパラメータをResolumeに保持させる方式を第一候補とする�
 | AT-05 | 未再生Clipの編集、選択、プレビュー、再初期化 | ClipがActiveでなければTarget Layerを変更しない。Active中のパラメータ編集は通知後に同期する |
 | AT-06 | 保存・再起動・読込・複製・Preset | 保存値が復元され、インスタンスとClipの対応が混線しない |
 | AT-07 | 映像パススルー | 色・Alpha・向き・解像度、既存映像への影響が許容範囲 |
-| AT-08 | Clip停止・Eject・別Clip切替・空セルColumn | 停止後は同期せず旧値を自動復元しない。空セル挙動を記録 |
+| AT-08 | Clip停止・Eject・別Clip切替・空セルColumn | 停止後に適用前の値へ復元される。別のLayer Control Clipへ切り替える場合は復元を挟まず新Clipの値になる。空セル挙動を記録 |
 | AT-09 | Mask 3状態の同期 | Disabled・One Below・All Belowで指定通りのマスク適用 |
 | AT-10 | 動画Maskと同Column映像 | 動画が更新され、意図しない一瞬の露出がない |
 | AT-11 | Group境界・Layer移動・追加・削除 | マスク作用先とTarget Layer番号の扱いが説明可能 |
@@ -323,7 +381,7 @@ WebSocket対応表には、対象版、Composition通知形式、Clip状態・ID
 
 ## 10. 初版の範囲外
 
-Resolume本体改造、本プラグインの制御項目以外へ任意のWebSocketコマンドを追加するUI、ネットワーク越しの複数PC制御、1インスタンスでの複数Target Layer指定、旧値への自動復元、独立した通常映像とMask動画の同一Layer同時再生、専用動画MASKエフェクト、未検証バージョンへの互換性保証は初版に含めない。
+Mask Mode制御（別プラグイン`Layer Mask Control`として第2段階）、Resolume本体改造、本プラグインの制御項目以外へ任意のWebSocketコマンドを追加するUI、ネットワーク越しの複数PC制御、1インスタンスでの複数Target Layer指定、独立した通常映像とMask動画の同一Layer同時再生、専用動画MASKエフェクト、未検証バージョンへの互換性保証は初版に含めない。
 
 ## 11. 参照資料
 

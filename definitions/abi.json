@@ -1,0 +1,142 @@
+{
+  "RLCT": [
+    {
+      "id": 0,
+      "key": "enabled",
+      "label": "Enabled",
+      "type": "boolean",
+      "role": "enabled",
+      "default": 0
+    },
+    {
+      "id": 1,
+      "key": "target_layer",
+      "label": "Target Layer",
+      "type": "integer",
+      "role": "target",
+      "default": 1,
+      "min": 1,
+      "max": 1024
+    },
+    {
+      "id": 2,
+      "key": "duration",
+      "label": "Duration",
+      "type": "number",
+      "default": 1,
+      "min": 0,
+      "max": 10,
+      "property": "transition.duration",
+      "tolerance": 1e-06
+    },
+    {
+      "id": 3,
+      "key": "blend_mode",
+      "label": "Blend Mode",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "Add",
+        "Alpha",
+        "B&W",
+        "Burn",
+        "Cube",
+        "Cut",
+        "Darken",
+        "Difference",
+        "Difference I",
+        "Displace",
+        "Dissolve",
+        "Dodge",
+        "Exclusion",
+        "Hard Light",
+        "JitterBug",
+        "Lighten",
+        "LoRez",
+        "Luma Is Alpha",
+        "Luma Key",
+        "Luma Key I",
+        "Meta Mix",
+        "Multiply",
+        "Multi Task",
+        "Noisy",
+        "Overlay",
+        "Parts",
+        "PiP",
+        "Push Down",
+        "Push Left",
+        "Push Right",
+        "Push Up",
+        "RGB",
+        "Rotate X",
+        "Rotate Y",
+        "Screen",
+        "Shift RGB",
+        "Side by Side",
+        "Soft Light",
+        "Static",
+        "Subtract",
+        "Tile",
+        "TimeSwitcher",
+        "to Black",
+        "to Color",
+        "to White",
+        "Twitch",
+        "Video Bumper",
+        "Wipe Ellipse",
+        "Zoom In",
+        "Zoom Out"
+      ],
+      "property": "transition.blend_mode"
+    },
+    {
+      "id": 4,
+      "key": "instance_key",
+      "label": "Instance Key",
+      "type": "text",
+      "role": "identity",
+      "visible": false
+    }
+  ],
+  "RLCM": [
+    {
+      "id": 0,
+      "key": "enabled",
+      "label": "Enabled",
+      "type": "boolean",
+      "role": "enabled",
+      "default": 0
+    },
+    {
+      "id": 1,
+      "key": "target_layer",
+      "label": "Target Layer",
+      "type": "integer",
+      "role": "target",
+      "default": 1,
+      "min": 1,
+      "max": 1024
+    },
+    {
+      "id": 2,
+      "key": "mask_mode",
+      "label": "Mask Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Disabled",
+        "One Below",
+        "All Below"
+      ],
+      "property": "maskmode"
+    },
+    {
+      "id": 3,
+      "key": "instance_key",
+      "label": "Instance Key",
+      "type": "text",
+      "role": "identity",
+      "visible": false
+    }
+  ]
+}

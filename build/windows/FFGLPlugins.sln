@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.31129.286
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -22,6 +22,10 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Events", "Events.vcxproj", 
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LayerControlProbe", "LayerControlProbe.vcxproj", "{01773F63-C171-470D-A5B3-0D1D3E31196F}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LayerControl", "LayerControl.vcxproj", "{84E00B04-D126-41F4-BB3A-0BD606878353}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LayerMaskControl", "LayerMaskControl.vcxproj", "{2CCF9EB3-59F0-4866-A9F1-08CBCE01DBDA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -29,9 +33,17 @@ Global
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{01773F63-C171-470D-A5B3-0D1D3E31196F}.Debug|x64.ActiveCfg = Debug|x64
+		{84E00B04-D126-41F4-BB3A-0BD606878353}.Debug|x64.ActiveCfg = Debug|x64
+		{2CCF9EB3-59F0-4866-A9F1-08CBCE01DBDA}.Debug|x64.ActiveCfg = Debug|x64
 		{01773F63-C171-470D-A5B3-0D1D3E31196F}.Debug|x64.Build.0 = Debug|x64
+		{84E00B04-D126-41F4-BB3A-0BD606878353}.Debug|x64.Build.0 = Debug|x64
+		{2CCF9EB3-59F0-4866-A9F1-08CBCE01DBDA}.Debug|x64.Build.0 = Debug|x64
 		{01773F63-C171-470D-A5B3-0D1D3E31196F}.Release|x64.ActiveCfg = Release|x64
+		{84E00B04-D126-41F4-BB3A-0BD606878353}.Release|x64.ActiveCfg = Release|x64
+		{2CCF9EB3-59F0-4866-A9F1-08CBCE01DBDA}.Release|x64.ActiveCfg = Release|x64
 		{01773F63-C171-470D-A5B3-0D1D3E31196F}.Release|x64.Build.0 = Release|x64
+		{84E00B04-D126-41F4-BB3A-0BD606878353}.Release|x64.Build.0 = Release|x64
+		{2CCF9EB3-59F0-4866-A9F1-08CBCE01DBDA}.Release|x64.Build.0 = Release|x64
 		{8EE99351-6226-415E-B2E9-2DCB2985F371}.Debug|x64.ActiveCfg = Debug|x64
 		{8EE99351-6226-415E-B2E9-2DCB2985F371}.Debug|x64.Build.0 = Debug|x64
 		{8EE99351-6226-415E-B2E9-2DCB2985F371}.Release|x64.ActiveCfg = Release|x64
@@ -62,6 +74,8 @@ Global
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{01773F63-C171-470D-A5B3-0D1D3E31196F} = {F16144DC-83FA-4B2B-8E05-8BE54C7236DF}
+		{84E00B04-D126-41F4-BB3A-0BD606878353} = {F16144DC-83FA-4B2B-8E05-8BE54C7236DF}
+		{2CCF9EB3-59F0-4866-A9F1-08CBCE01DBDA} = {F16144DC-83FA-4B2B-8E05-8BE54C7236DF}
 		{8EE99351-6226-415E-B2E9-2DCB2985F371} = {F16144DC-83FA-4B2B-8E05-8BE54C7236DF}
 		{24912FC3-BC01-49E9-BA34-54549F0D8F23} = {98BAD375-4E77-4EDA-86CA-E77F213DCDA6}
 		{6858F0CB-DE74-406F-B56A-CC5514CAA952} = {26AC2413-23B7-4D1F-BB58-17D67106F3F1}

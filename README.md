@@ -1,5 +1,7 @@
 # ResolumeLayerControl
 
+現在はWebSocket方式の検証用実装「Layer Control」を開発中です。Windows Releaseビルドと単体・通信試験は実施済みですが、実機受入は未完了です。[仕様](docs/SPECIFICATION.md)、[ビルド・導入](docs/SETUP.md)、[共通基盤と固有処理の分離](docs/ARCHITECTURE.md)、[検証記録](docs/VALIDATION.md)を参照してください。旧OSC Probeは研究記録として保持しています。
+
 ResolumePlugin is a custom FFGL plugin that lets you control a specified layer’s transition settings and mask mode using an Effect Clip.
 
 ## Setup

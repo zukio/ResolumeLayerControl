@@ -21,7 +21,7 @@ ResolumeのWebSocket Composition通知を契機に、Activeな制御用Effect Cl
 - Effect Clipの配置LayerとTarget Layerを独立して扱う。
 - 同じColumnで始まる映像に、新設定が適用されるかを必ず検証する。設定値が後から変わるだけでは要求達成としない。
 - Maskを通常表示へ戻す操作と、Mask設定を変更しない指定を分離する。
-- 初版は1インスタンス1対象Layerとし、停止時の自動復元は行わない。
+- 初版は1インスタンス1対象Layerとする。Active中のみ値を反映し、非Activeになったら適用前の値へ復元する（別のLayer Control ClipがActiveなら復元せず切替のみ）。
 
 ## 調査・報告の原則
 
