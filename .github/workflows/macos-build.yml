@@ -1,0 +1,39 @@
+name: macOS build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure plugins
+        run: >
+          cmake -S . -B build-control-plugins -DCMAKE_BUILD_TYPE=Release
+          -DFFGL_BUILD_EXAMPLE_PLUGINS=OFF -DRLC_BUILD_PLUGINS=ON
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+
+      - name: Build plugins
+        run: cmake --build build-control-plugins --target ffgl-plugin-layer-control ffgl-plugin-layer-mask-control
+
+      - name: Build and run tests
+        run: |
+          cmake -S tests -B build-control-tests -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          cmake --build build-control-tests
+          ctest --test-dir build-control-tests --output-on-failure
+
+      - name: List bundles
+        run: find build-control-plugins/source/plugins -maxdepth 3 -name '*.bundle'
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-bundles
+          path: build-control-plugins/source/plugins/**/*.bundle
+          if-no-files-found: error

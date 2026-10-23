@@ -6,7 +6,7 @@ An FFGL plugin for controlling a layer's Transition Blend Mode, Duration, and Ma
 
 ### Download DLL
 
-⬇️ [Download the latest release](https://github.com/zukio/ResolumeLayerControl/releases/new)
+⬇️ [Download the latest release](https://github.com/zukio/ResolumeLayerControl/releases/)
 
 ### Use in Resolume
 
