@@ -47,3 +47,4 @@
 {"event":"gate","evidence":{"plugin":"Layer Mask Control","target_layer":2.0},"owner":"c39fb78a-d4b6-493e-8b4a-54322db7f80f","status":"unresolved_or_duplicate_key","wall_ms":1792748678724}
 {"event":"baseline_dropped","path":"/parameter/by-id/1792748299605","wall_ms":1792748678724}
 {"event":"disconnected","pending":0,"wall_ms":1792748678732}
+{"event":"failure","reason":"WebSocket upgrade failed","wall_ms":1792753300616}
