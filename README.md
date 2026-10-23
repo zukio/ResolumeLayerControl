@@ -14,3 +14,29 @@ ResolumePlugin is a custom FFGL plugin that lets you control a specified layer�
 2️⃣ restart Resolume,
 3️⃣ add **Layer Ctrl Probe** as an Effect Clip,
 4️⃣ and Reload the window list once.
+
+## Build
+
+The current build target is **LayerControlProbe**, a diagnostic FFGL plug-in displayed as **Layer Ctrl Probe** in Resolume. It does not yet change Layer Transition settings or Mask Mode.
+
+Install Visual Studio 2022 with **Desktop development with C++**, the **MSVC v143** toolset, and a **Windows SDK**. The project uses the bundled FFGL sources in `source\lib` and GLEW in `deps\glew-2.1.0` through `deps\glew.props`.
+
+Open `build\windows\FFGLPlugins.sln`, select `Release|x64` (or `Debug|x64`), then right-click **effects > LayerControlProbe** in Solution Explorer and select **Build**.
+
+Alternatively, run the following from the repository root in **Developer PowerShell for VS 2022**:
+
+```powershell
+msbuild .\build\windows\LayerControlProbe.vcxproj /p:Configuration=Release /p:Platform=x64
+```
+
+Use `/p:Configuration=Debug` for a debug build. The output DLL is:
+
+```text
+binaries\x64\<Configuration>\LayerControlProbe.dll
+```
+
+These instructions reflect the checked-in Visual Studio project; the command above has not been verified in this documentation update. See [the validation notes](docs/VALIDATION.md) for installation, diagnostic tests, and recorded results. Building the DLL does not establish that Column-triggered control works.
+
+## Dependency
+
+The official Resolume FFGL SDK is vendored under `third_party\ffgl` from <https://github.com/resolume/ffgl>.
