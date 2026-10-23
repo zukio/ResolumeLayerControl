@@ -4,24 +4,24 @@
 
 ## 目的と参照順序
 
-ResolumeのWebSocket Composition通知を契機に、Activeな制御用Effect Clipの指定値とTarget Layerの現在値を照合し、差分だけを同期するC++／FFGLプラグインを開発する。Column再トリガーを一意に検出する設計ではない。
+ResolumeのWebSocket Composition通知を契機に、ActiveなEffect Clipの設定をTarget Layerへ反映し、非Activeになったら管理開始前の値へ復元するC++／FFGLプラグインを保守する。Column再トリガーを一意に検出する設計ではなく、同じColumnで始まる映像にTransitionが間に合うかは別途評価する。
 
 最初にdocs/SPECIFICATION.mdを読む。ユーザーの指示を優先し、仕様との相違や新しい判断は仕様書へ反映する。本ファイルと仕様書の不整合を黙って実装で解釈しない。
 
-既存の診断試作・実機検証ログの有無をリポジトリで確認する。過去の文書に「未作成」とあっても最新の状況を上書きしない。
+次にdocs/SETUP.md、docs/VALIDATION.md、必要に応じてdocs/ARCHITECTURE.mdとdocs/PROTOCOL_MAP.mdを読む。過去の文書や古いログより、現行コード・最新の実機結果・ユーザーの最新報告を優先し、古い状況記述をそのまま引き継がない。
 
 ## 守る要求
 
 - 制御用Clipは説明用の仮称であり、正式な機能名はEffect Clipである。
-- 変更対象はLayer Transitionの方式・時間とLayer Mask Modeである。
+- Layer ControlはLayer TransitionのBlend ModeとDurationを制御する。Layer Mask ControlはLayer Mask Modeを制御する別プラグインであり、両者のTarget Layerは独立している。
 - Transition Blend ModeとLayer Blend Modeを混同しない。
 - MaskのTarget Layerは、マスクされる側ではなくMask Modeを変更する側である。
 - 利用者はLayer番号と意味のある選択肢を編集する。WebSocketのパス・パラメータIDを通常操作で要求しない。プラグインのOSC互換送信経路は作らない。
 - Resolume本体は改造しない。
 - Effect Clipの配置LayerとTarget Layerを独立して扱う。
-- 同じColumnで始まる映像に、新設定が適用されるかを必ず検証する。設定値が後から変わるだけでは要求達成としない。
-- Maskを通常表示へ戻す操作と、Mask設定を変更しない指定を分離する。
-- 初版は1インスタンス1対象Layerとする。Active中のみ値を反映し、非Activeになったら適用前の値へ復元する（別のLayer Control ClipがActiveなら復元せず切替のみ）。
+- Effect ClipがActiveになった時のLayer設定反映と、非Activeになった時のベースライン復元を維持する。別の同種Control Clipが同じ項目を管理するときは、復元せず新しい指定値へ切り替える。
+- 同じColumnで始まる映像にTransitionが適用されるかを必ず検証する。Layer値の変更だけでは要求達成としない。
+- 初版は1インスタンス1対象Layerとする。Enabledはプラグインごとの設定に従い、Apply Transition／Apply MaskのようなApplyスイッチを再導入しない。
 
 ## 調査・報告の原則
 
@@ -34,41 +34,42 @@ ResolumeのWebSocket Composition通知を契機に、Activeな制御用Effect Cl
 - 不可能または未成立と判明した項目は理由と影響を記録する。代替方式を元の仕様達成と呼ばない。
 - 既に認められた範囲の調査・実装・修正は進める。操作体系や構成を変える必要がある場合に、その差分を具体化して示す。
 
-## 着手手順
+## 保守作業の進め方
 
-1. 仕様書の未検証事項と既存の検証結果を確認する。
-2. OS、Resolume製品名・版、SDKのcommit、コンパイラ、アーキテクチャ、テンプレートの実体を記録する。
-3. 既存リポジトリがあれば構成・ビルド手順を読み、既存方式を優先する。
-4. Node-REDからのWebSocketによるTransition／Mask設定成功の既存検証記録を読み、実値の読戻しと切替タイミングを追加確認する。
-5. Composition通知からClip ID、`connected.value`、Target Layerの実値を取得・記録する。FFGLインスタンスとClip IDの対応を検証する。
-6. Active判定と現在値との差分同期を統合し、自己通知ループやPreviewing時の送信を抑制する。
-7. Maskの3状態、映像パススルー、Transitionの反映順序を実機で検証する。
+1. 仕様書と検証記録を読み、今回変更に関係する要求・既知の制約・未確認項目を特定する。
+2. 既存のソース、定義JSON、生成物、プロジェクト設定、テストを確認し、既存パターンを優先する。
+3. 変更に関係する最小のテストを追加・実行する。ホスト依存の条件は実機試験と分けて記録する。
+4. 実機試験を行った場合はArenaの製品・版、構成、操作、観測結果をdocs/VALIDATION.mdへ追記する。未実施なら、再現手順と未確認事項を残す。
 
-各段階の合格条件は仕様書7節に従う。成立していない条件を後工程の実装量で埋め合わせない。独立して進められる調査は継続してよい。
+現行のビルド・導入手順はdocs/SETUP.mdを参照する。AT-01〜AT-17の合格条件は仕様書7節に従う。部分的な成立を全体の合格として報告しない。
 
 ## Composition通知・Active判定・状態同期
 
 - WebSocketのComposition状態通知を契機にする。定期ポーリングや再生位置の巻き戻りをトリガー判定に使わない。
 - `parameter_update`の`path`で再生位置などの更新対象を判別し、位置更新だけで同期処理を開始しない。
 - FFGLインスタンスをComposition内のClip IDへ一意に対応付ける方法を確立する。複製や複数配置で曖昧なら送信しない。
-- 本番Activeの候補は`connected.value`の`Connected`／`Connected & previewing`。`Disconnected`／`Previewing`は制御しない。状態定義は実機で確認する。
-- ActiveかつEnabledなら指定値とTarget Layerの**最新の実値**を比較する。異なるApply項目だけ`set`し、一致項目は送信しない。
+- 現行実装は`connected.value`の`Connected`／`Connected & previewing`をActiveとして扱い、`Disconnected`／`Previewing`では制御しない。既知の実機確認結果を維持し、状態判定を変える場合は状態別に再試験する。
+- ActiveかつEnabledなら指定値とTarget Layerの**最新の実値**を比較する。異なる制御項目だけ`set`し、一致項目は送信しない。
 - **以前に送信した値の記録を現在値の代わりにしない。** 別操作でTarget Layerが変わった場合は、次のComposition通知で差分を検出し指定値へ戻す。
 - 同一Column再トリガーと再生中編集を区別する必要はない。Active中編集は次の通知で反映する。
 - 未再生Clipの選択・プレビュー・編集は送信しない。初期化そのものによる無条件送信もしない。
+- Active Clipがなくなった場合は、保存したベースラインへ戻す。復元対象値の読戻しを確認し、単なる送信成功を復元成功と扱わない。
 - WebSocketの`set`による通知が再入力されても、最新値の比較と未完了要求の管理で無限再送させない。
 - FFGLの`Connect()`／`SetTime()`を再トリガー検出の前提にしない。
 - Auto Pilot、Fader Start、Bypass、Opacity 0、Solo、読込後Active状態を個別に検証する。
 
 ## 実装構成
 
-FFGL Adapter、Composition Subscriber、Clip Resolver / Active Gate、State Reconciler、Protocol Mapping、WebSocket Transport、Diagnosticsの責務を分ける。既存構成があれば最小変更を優先する。
+現行の責務分割は`source/control/`（Runtime、Composition、StateReconciler、WebSocket、パススルー等）、`source/plugins/`（FFGLアダプターと機能別ポリシー）、`definitions/`（JSON定義）、`tools/generate_plugin.py`（ビルド時生成）である。既存構成があれば最小変更を優先し、同じ責務を重複実装しない。
 
+- JSON定義を変更したら生成処理と定義テストを実行する。生成ヘッダーは原則として生成コマンドで更新し、手編集しない。
+- `build/windows/FFGLPlugins.sln`の現行対象は`LayerControl`と`LayerMaskControl`。旧OSC Probeはソリューションから外れているが、ソース、CMake、テストから参照されているため、削除前に依存を調べる。
+- Enabledの初期値は定義ごとに異なる。現行JSONではLayer ControlがON、Layer Mask ControlがOFF。変更時は意図と関連テストを確認する。
 - 起動時のパラメータ復元と、Composition通知での状態同期を区別する。
 - 描画処理中にネットワーク応答待ち・ディスク書込み待ちを行わない。
 - 毎フレーム送信しない。通知を受けても一致する値は送信しない。
 - 未完了の同一差分要求を多重送信しない。キューは有限とする。
-- 古いActive Clipの保留要求が新Clipの指定値を上書きしないよう管理する。
+- Active Clip切替・復元と未完了要求の世代を管理し、古いClipの応答や通知が新Clipの値を上書きしないようにする。
 - 終了時にWebSocket・ワーカー・GL資源を解放する。例外をホスト境界へ漏らさない。
 
 ## プロトコルと失敗処理
@@ -103,9 +104,11 @@ FFGL Adapter、Composition Subscriber、Clip Resolver / Active Gate、State Reco
 
 ## 検証と記録
 
-仕様書のAT-01〜AT-17を受入試験として使う。ホスト動作が関係する項目をモックだけで合格にしない。
+仕様書のAT-01〜AT-17を受入試験として使う。現在、利用者の実機報告ではLayer ControlのActive時のTransition Blend変更と、別ClipをActiveにした直後のベースライン復元が確認済み。Transitionが同じColumnで始まる映像に適用されること、Layer Mask Controlの動作など、残る条件は個別に確認する。ホスト動作が関係する項目をモックだけで合格にしない。
 
 ユニットテストを追加する場合は、値の変換、Active判定、Clip ID対応、現在値との差分、自己通知ループ抑制、古い要求の破棄等、故障の影響が大きいロジックを対象とする。文書だけの変更や実装をそのまま写したテストは不要。
+
+自動テストはdocs/SETUP.mdに記載されたCMake／CTest手順を基本とする。通信ランタイムを変更した場合は`tests/test_websocket_runtime.py`も実行する。テスト成功は実機試験の代わりにならない。
 
 検証資料は以下のパスを使用する。実ファイルの有無と内容はリポジトリで確認する。
 
@@ -120,4 +123,3 @@ FFGL Adapter、Composition Subscriber、Clip Resolver / Active Gate、State Reco
 ## 完了時の報告
 
 変更内容、目的、実施した検証、その結果、未実施項目、残る制約を短く報告する。実機未検証なら明記する。次の担当者が同じ環境と手順で再現できる状態で引き継ぐ。
-
