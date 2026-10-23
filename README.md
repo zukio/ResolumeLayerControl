@@ -16,6 +16,8 @@ An FFGL plugin for controlling a layer's Transition Blend Mode, Duration, and Ma
 4️⃣ Add **Layer Control** to an Effect Clip from the Effects tab.  
 5️⃣ Leave **Enabled** on and trigger the Clip's Column.
 
+![Image](docs/media/screenshot001.png)
+
 ## Build
 
 See [Build and setup](docs/SETUP.md) for the current Layer Control and Layer Mask Control build and installation instructions.
