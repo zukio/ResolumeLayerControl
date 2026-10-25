@@ -13,19 +13,23 @@
 | `source/control/StateReconciler.h` | 現在値との差分、競合・未完了・失敗要求の抑止 | LayerやFFGLを知らない純粋ロジック |
 | `source/control/Runtime.h` | DLL内の共有接続、ControlSourceの評価、通知処理、読戻し、診断 | 新しいControlSourceも同じ基盤へ登録可能 |
 | `source/control/PassThrough.h` | テクスチャのパススルーと変更したGL状態の復元 | FFGL映像アダプターとして流用 |
-| `source/plugins/LayerControl/LayerPolicy.h` | 今回のパラメータ定義、Transition／Mask選択肢、Layer番号・実値の対応 | 新用途ではここを交換 |
-| `source/plugins/LayerControl/LayerControl.h/.cpp` | FFGL UI、パラメータ保持、識別キー、上記を結ぶSource | 新用途に合わせてUIとSourceを変更 |
+| `definitions/LayerControl.json`／`LayerMaskControl.json` | プラグイン名、パラメータ、初期値、範囲、選択肢、制御対象property | 機能ごとの定義を編集 |
+| `definitions/abi.json` | 既存パラメータ番号・型・選択肢等の互換性検査基準 | 既存の保存値の意味を維持 |
+| `tools/generate_plugin.py`／`source/generated/` | JSON定義の検証と組込みヘッダー生成 | 生成ヘッダーは手編集しない |
+| `source/control/DefinitionPolicy.h` | 定義に基づく設定値検査、Layer番号・実値の解決、Intent生成 | 共通の変換・制御条件を変更する場合に編集 |
+| `source/control/DefinedPlugin.h` | 定義に基づくFFGL UI、パラメータ保持、識別キー、DefinedSource | 両プラグイン共通のFFGLアダプター |
+| `source/plugins/LayerControl/LayerControl.cpp`／`LayerMaskControl/LayerMaskControl.cpp` | 生成定義と共通アダプターを結ぶプラグイン登録 | 新しいプラグインの登録時に追加 |
 
 `Intent`はowner、解決済みpath、actual、desiredの4項目を持つ絶対値設定である。実値不明を送信済み値で埋めない。Runtimeは通知ごとに各SourceからIntentを取得し、同一pathを複数Sourceが要求すると、同じdesiredでも送信を止める。Applyされていて既に一致する項目もIntentへ含め、競合検出から除外しない。
 
 ## 追加・変更・削除
 
-1. `LayerPolicy.h`のような固有ポリシーで、確認済みのComposition構造から実値とIDを解決する。
-2. Apply条件に応じてIntentを返す。切替・削除・不明状態は空の結果、または理由を伴う例外で送信を止める。
-3. FFGL側に意味のあるUIを設ける。UI編集は設定を保持するだけで、通信を直接呼ばない。
-4. `ControlSource::Evaluate`で設定のスナップショットとrevisionを取得する。編集・破棄でrevisionを更新する。
-5. 新しいDLLには別のFFGL 4文字ID・表示名・ビルドターゲットを割り当てる。
-6. 変更するポリシーの変換・未確認値・競合を試験し、ホスト上で通知と実値反映を確認する。
+1. `definitions/*.json`でUIと制御対象を定義する。`property`は確認済みのComposition内のLayerプロパティに対応させる。既存の定義形式で扱えない変換は`DefinitionPolicy.h`で実装する。
+2. `DefinitionPolicy.h`の`BuildIntents`でEnabled・Active等の条件を確認し、実値と指定値を持つIntentを返す。不明な値は理由を伴う例外等で送信を止める。
+3. `DefinedPlugin.h`が定義からFFGL UIを構築する。UI編集は設定を保持するだけで、通信を直接呼ばない。`DefinedSource::Evaluate`が設定とrevisionを取得し、編集・破棄でrevisionを更新する。
+4. JSON定義を変更したら`tools/generate_plugin.py`で生成ヘッダーを更新し、定義テストを実行する。生成ヘッダーは手編集しない。ビルド・テスト手順は[SETUP.md](SETUP.md)を参照する。
+5. 新しいDLLには別のFFGL 4文字ID・表示名・ビルドターゲットを割り当て、`source/plugins/`に登録用の`.cpp`とビルド設定を追加する。
+6. 変更する変換・未確認値・競合を試験し、ホスト上で通知と実値反映を確認する。共通処理の変更は両プラグインへの影響を確認する。
 
 既存プラグインの公開済みパラメータ番号・選択肢番号は再利用しない。削除する項目は番号を予約し、保存済みCompositionを別の意味に解釈しない。今回の0.3は実機受入前の試作であり、安定版の互換性保証はまだない。
 
@@ -53,4 +57,4 @@ SDK上にVALUEイベントが存在することは確認済み。Arenaがテキ�
 
 ## 依存関係
 
-既存の同梱FFGL SDKとGLEWを使用。上流SDK commitとffgl-effectテンプレートの由来は引き続き未確定。JSONはnlohmann/json v3.11.3を`deps/nlohmann`に固定しMITライセンスを同梱。WinHTTP／GUID生成はWindows SDKを使用する。プラグインからOSC／UDPは送信しない。従来のProbeは履歴・診断資料として保持し、CMakeの既定ビルドから外した。
+既存の同梱FFGL SDKとGLEWを使用。上流SDK commitとffgl-effectテンプレートの由来は引き続き未確定。JSONはnlohmann/json v3.11.3を`deps/nlohmann`に固定しMITライセンスを同梱。通信はWebSocket++／Asio、XML解析はTinyXML-2を使用する。依存の版・取得元は`deps/control-dependencies.json`、ライセンスは`deps/CONTROL-LICENSES.txt`を参照する。UUID生成等のOS固有処理はPlatformアダプターに分離している。プラグインからOSC／UDPは送信しない。従来のProbeは履歴・診断資料として保持し、CMakeの既定ビルドから外した。
