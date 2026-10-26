@@ -6,7 +6,22 @@
 #include <string>
 
 namespace control {
-struct ServerSettings { bool enabled; unsigned short port; };
+struct ServerSettings { bool enabled; unsigned short port; std::string host; };
+inline bool ValidListenAddress(const std::string& address) {
+    unsigned octets[4]{};
+    size_t begin = 0;
+    for (unsigned i = 0; i < 4; ++i) {
+        const auto end = address.find('.', begin);
+        if ((i < 3) != (end != std::string::npos)) return false;
+        const auto part = address.substr(begin, end == std::string::npos ? end : end - begin);
+        if (part.empty() || part.size() > 3 || part.find_first_not_of("0123456789") != std::string::npos ||
+            (part.size() > 1 && part[0] == '0')) return false;
+        octets[i] = static_cast<unsigned>(std::stoul(part));
+        if (octets[i] > 255) return false;
+        begin = end + 1;
+    }
+    return address == "0.0.0.0" || (octets[0] > 0 && octets[0] < 224);
+}
 inline void ValidateSettingsTree(const tinyxml2::XMLNode& node, unsigned depth = 0) {
     if (depth > 16 || node.ToUnknown()) throw std::runtime_error("unsupported server.xml structure/depth");
     for (auto* child = node.FirstChild(); child; child = child->NextSibling())
@@ -47,8 +62,9 @@ inline ServerSettings ReadServerSettings(const std::filesystem::path& file) {
         throw std::runtime_error("invalid Webserver port");
     const auto number = std::stoul(port);
     if (number < 1 || number > 65535) throw std::runtime_error("Webserver port out of range");
-    if (address != "0.0.0.0" && address != "127.0.0.1")
-        throw std::runtime_error("Webserver listen address does not support 127.0.0.1 connection");
-    return {enabled == "1", static_cast<unsigned short>(number)};
+    if (!ValidListenAddress(address))
+        throw std::runtime_error("Webserver listen address must be a unicast IPv4 address or 0.0.0.0");
+    return {enabled == "1", static_cast<unsigned short>(number),
+            address == "0.0.0.0" ? "127.0.0.1" : address};
 }
 }

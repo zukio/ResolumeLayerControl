@@ -6,7 +6,7 @@ class WebSocket {
 public:
     WebSocket();
     ~WebSocket();
-    void Connect(unsigned short port);
+    void Connect(unsigned short port, const std::string& host = "127.0.0.1");
     bool Receive(std::string& message);
     bool Send(const std::string& message);
     void Cancel() noexcept;

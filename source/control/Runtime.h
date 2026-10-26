@@ -179,8 +179,8 @@ private:
             if (!settings.enabled) { Log({{"event", "disabled"}, {"reason", "Resolume Webserver disabled"}}); return; }
             const auto port = settings.port;
             if (stop.load()) return;
-            socket.Connect(static_cast<unsigned short>(port));
-            Log({{"event", "connected"}, {"port", port}});
+            socket.Connect(static_cast<unsigned short>(port), settings.host);
+            Log({{"event", "connected"}, {"host", settings.host}, {"port", port}});
             std::string raw;
             while (!stop.load() && socket.Receive(raw)) {
                 const auto message = Json::parse(raw);

@@ -53,7 +53,7 @@ Mac上で本体の実行名、XML、接続、終了、パススルー映像を�
 
 1. Resolume Arenaを終了する。
 2. 使用するDLLをArenaの`Extra Effects`フォルダーへコピーする。通常は`%USERPROFILE%\Documents\Resolume Arena\Extra Effects`です。
-3. Arena本体のPreferences → WebserverでWebserverを有効にする。Listen Addressは`0.0.0.0`または`127.0.0.1`にする。
+3. Arena本体のPreferences → WebserverでWebserverを有効にする。Listen Addressは`0.0.0.0`、`127.0.0.1`、またはこのPCのIPv4（固定IPを含む）にする。0.0.0.0なら127.0.0.1、それ以外なら指定IPv4へ接続する。IPv6・ホスト名・別PCは非対応。
 4. 本体設定を保存してArenaを再起動する。プラグインはWindowsのDocuments既知フォルダー配下の`Resolume Arena/Preferences/server.xml`からポートを取得する。Documentsの移動にも追従する。対象はWindows／Arena（設定形式の実測は7.27.1 rev15990）。別ホストは接続しない。
 5. 専用のEffect Clipに目的のプラグインを追加する。Enabledの初期値はLayer ControlがON、Layer Mask ControlがOFF。配置LayerとTarget Layerは別々に指定し、Instance Keyは編集しない。
 

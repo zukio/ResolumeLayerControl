@@ -80,9 +80,33 @@ int main(int argc, char** argv) {
         s[TargetLayer] = 2;
         bool failed = false; try { Evaluate(c, s); } catch (...) { failed = true; }
         Check(failed, "missing layer fails closed");
-        s[TargetLayer] = 1; c["layergroups"].push_back({{"id", 5}});
+        s[TargetLayer] = 1; c["layergroups"].push_back({{"id", 5}, {"layers", Json::array()}});
+        Check(!Evaluate(c, s).empty(), "group existence does not block outside layer");
+        c["layergroups"][0]["layers"].push_back(c["layers"][0]);
+        Check(!Evaluate(c, s).empty(), "group member alias is not duplicate instance");
+        c["layergroups"][0]["layers"][0]["id"] = 999;
         failed = false; try { Evaluate(c, s); } catch (...) { failed = true; }
-        Check(failed, "unvalidated groups fail closed");
+        Check(failed, "unknown group member fails closed");
+        c["layergroups"][0]["layers"][0] = c["layers"][0];
+        c["layergroups"][0]["layers"][0]["maskmode"]["value"] = "All Below";
+        failed = false; try { Evaluate(c, s); } catch (...) { failed = true; }
+        Check(failed, "inconsistent group alias fails closed");
+        c = Fixture();
+        auto other = c["layers"][0]; other["id"] = 300;
+        other["clips"] = Json::array(); other["maskmode"]["id"] = 303;
+        c["layers"].push_back(other);
+        c["layergroups"] = Json::array({{{"id", 5}, {"layers", Json::array({other})}}});
+        s[TargetLayer] = 2;
+        Check(Evaluate(c, s)[0].path == "/parameter/by-id/303", "group target uses global layer number");
+        std::swap(c["layers"][0], c["layers"][1]);
+        Check(Evaluate(c, s)[0].path == "/parameter/by-id/103", "reorder resolves current number and parameter id");
+        c["layergroups"] = Json::array();
+        Check(Evaluate(c, s)[0].path == "/parameter/by-id/103", "ungroup does not shift layer number");
+        c["layers"][0]["clips"] = c["layers"][1]["clips"];
+        c["layers"].erase(1);
+        failed = false; try { Evaluate(c, s); } catch (...) { failed = true; }
+        Check(failed, "deleted target never falls back to another layer");
+        s[TargetLayer] = 1;
         c = Fixture(); c["layers"][0]["maskmode"].erase("id");
         failed = false; try { Evaluate(c, s); } catch (...) { failed = true; }
         Check(failed, "missing real id fails closed");
@@ -92,7 +116,7 @@ int main(int argc, char** argv) {
         Check(r.TrackedCount() == StateReconciler::Capacity, "failed tracking bounded");
         r.Fail("overflow");
         Check(r.TrackedCount() == StateReconciler::Capacity, "failed tracking cannot grow");
-        if (argc == 2) {
+        if (argc >= 2) {
             // Parse actual, unmodified capture. No synthetic fixture can pass host acceptance.
             std::ifstream file(argv[1]); Check(file.good(), "capture opens");
             const auto composition = Json::parse(file);
@@ -101,6 +125,21 @@ int main(int argc, char** argv) {
             Check(Choice("capture", layer.at("transition").at("blend_mode"), "Alpha").desired == "Alpha", "captured transition schema");
             Check(Choice("capture", layer.at("maskmode"), "Disabled").desired == "Disabled", "captured mask schema");
             Check(!ResolveClip(composition, "test-key").clip, "unknown key is not resolved");
+        }
+        if (argc >= 3) {
+            std::ifstream file(argv[2]); Check(file.good(), "group capture opens");
+            const auto captured = Json::parse(file);
+            Check(captured.at("layergroups").size() > 0, "real group capture");
+            Check(CanonicalTokenOccurrences(captured, "missing-key") == 0, "real group aliases validate");
+            for (const auto& layer : captured.at("layers"))
+                for (const auto& clip : layer.at("clips")) {
+                    if (!clip.contains("video") || !clip["video"].is_object()) continue;
+                    for (const auto& effect : clip["video"].at("effects")) {
+                        if (!effect.contains("params") || !effect["params"].contains("Instance Key")) continue;
+                        const auto key = effect["params"]["Instance Key"]["value"].get<std::string>();
+                        Check(ResolveClip(captured, key).clip != nullptr, "captured instance resolves with group present");
+                    }
+                }
         }
         std::cout << checks << " checks passed\n"; return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

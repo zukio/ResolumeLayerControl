@@ -34,10 +34,22 @@ public:
         });
     }
     ~Impl() { Shutdown(); }
-    void Connect(unsigned short port) {
+    void Connect(unsigned short port, const std::string& host) {
         if (cancelled.load()) throw std::runtime_error("WebSocket cancelled");
+        // A configured listen address must belong to this machine. Binding a
+        // temporary socket checks this without connecting to a different host.
+        const auto address = asio::ip::make_address_v4(host);
+        if (address.is_unspecified() || address.is_multicast() || address.to_uint() == 0xffffffff)
+            throw std::runtime_error("invalid local WebSocket address");
+        asio::io_context probeContext;
+        asio::ip::tcp::socket probe(probeContext);
+        probe.open(asio::ip::tcp::v4());
+        asio::error_code bindError;
+        probe.bind(asio::ip::tcp::endpoint(address, 0), bindError);
+        if (bindError) throw std::runtime_error("Webserver listen address is not available locally");
+        probe.close();
         websocketpp::lib::error_code error;
-        connection = client.get_connection("ws://127.0.0.1:" + std::to_string(port) + "/api/v1", error);
+        connection = client.get_connection("ws://" + host + ":" + std::to_string(port) + "/api/v1", error);
         if (error) throw std::runtime_error("cannot create WebSocket connection");
         client.connect(connection);
         while (!opened && !ended && !cancelled.load()) {
@@ -87,7 +99,7 @@ private:
 };
 WebSocket::WebSocket() : impl(std::make_unique<Impl>()) {}
 WebSocket::~WebSocket() = default;
-void WebSocket::Connect(unsigned short port) { impl->Connect(port); }
+void WebSocket::Connect(unsigned short port, const std::string& host) { impl->Connect(port, host); }
 bool WebSocket::Receive(std::string& message) { return impl->Receive(message); }
 bool WebSocket::Send(const std::string& message) { return impl->Send(message); }
 void WebSocket::Cancel() noexcept { impl->Cancel(); }

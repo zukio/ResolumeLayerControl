@@ -1,5 +1,15 @@
 # 検証記録
 
+## 固定IPv4・Group対応（2026-10-26）
+
+- 変更：server.xmlの特定IPv4を接続先へ渡す。0.0.0.0は127.0.0.1へ変換。ローカルbindでそのPCで利用可能か確認し、IPv6・ホスト名・不正アドレスを拒否。Group全面拒否を削除し、Group側LayerのID・内容を正規layers配列と照合して識別の二重計数を防ぐ。
+- Target Layerは現在の番号を指定し、並び替え前のLayerを追跡しない。復元先は従来どおりパラメータID。関連する併用条件・上限をSPECIFICATION.mdの2026-10-26節に整理。
+- 実機読取り：Windows、Resolume Arena 7.27.1 rev15990、Composition Example、4 Layer／10 Column／1 Group。ws_snapshotで2回取得。最初はGroup内がLayer 4（ID 1792997542341）、後のUI照合ではGroup内がLayer 2・3（ID 1792997542341、1499337861306）。後者はUIのLayer 1 Galactucity、2 空Layer、3 Window Capture、4 Layer Controlとトップレベルlayersの順番が一致。取得中の構成変更は利用者側の操作で、エージェントが操作手順を管理した並び替え試験ではない。生データはPROTOCOL_MAP.md参照。保存・再生操作・構成変更は行っていない。
+- 自動試験：SETUP.md記載のCMake構成・Releaseビルド、`ctest --test-dir build-control-tests -C Release --output-on-failure`を実行し5/5合格。Group内外、Group側の複写、不整合拒否、並び替え後の番号とパラメータID、Group除去、対象削除、実機キャプチャのキー解決を確認。これらは映像の受入試験ではない。
+- 通信試験：`tests/test_websocket_runtime.py build-control-tests/Release/runtime_smoke.exe`に続けて、第2引数に`0.0.0.0`、`192.168.105.55`を指定して実行し合格。後者はこのPCのLAN IPv4で待ち受けるローカル模擬サーバーを使用。接続、差分set、読戻し、復元、自己通知収束、終了を確認。非ローカル203.0.113.1の拒否も確認。初めに候補192.168.0.111を使用した試験はbind時点でWinError 10049となり未成立。実際にbind可能な192.168.105.55で再試験した。DHCP／固定の割当方式自体は検査していない。
+- ビルド：`cmake --build build-control-plugins --config Release --target ffgl-plugin-layer-control ffgl-plugin-layer-mask-control`成功。成果物は各`build-control-plugins/source/plugins/<プラグイン名>/Release/`配下。Windows SDK参照が通常サンドボックス内で拒否されたため、ビルドは昇格実行。新DLLのArena導入は未実施。
+- 未実施／再現：新DLL導入後、本体Listen AddressをこのPCの固定IPv4にして設定保存・再起動し、実接続と値読戻しを確認。Group内外にEffect Clip／Target Layerを組み合わせ、Active時適用・非Active時復元を確認。Group追加・削除・移動の各操作前後にUI番号・Layer ID・パラメータID・実値を記録し、Target=Nが現在のN番を指すこと、旧対象の復元がそのIDにだけ行われることを確認。存在しない番号は送信しない。同Columnの映像Transition（AT-02）、MaskのGroup境界・一瞬の露出、全AT試験、Macは未実施。
+
 ## Windows／Mac共通コードへの移行（2026-10-23）
 
 - Windows専用のWinHTTP／XmlLiteを削除し、両OSでWebSocket++ 0.8.2＋standalone Asio 1.28.0、TinyXML-2 10.0.0を使用。Runtime・差分同期・復元・ログファイル処理を共用。OSアダプターはDocuments取得、ホスト名検査、環境変数の文字列変換、デバッグ出力、UUID生成のみ。依存の取得元・ハッシュは`deps/control-dependencies.json`、ライセンスは`deps/CONTROL-LICENSES.txt`。

@@ -55,7 +55,6 @@ inline std::vector<Intent> BuildIntents(const Json& d, const Json& composition, 
     if (!resolved.effect->contains("bypassed") || resolved.effect->at("bypassed").value("value",true)) { status = "bypassed_or_unknown"; return {}; }
     const auto index = static_cast<std::size_t>(settings[RoleIndex(d,"target")] - 1);
     if (index >= composition.at("layers").size()) throw std::runtime_error("target layer missing");
-    if (composition.contains("layergroups") && !composition["layergroups"].empty()) throw std::runtime_error("group numbering not validated");
     const auto& layer = composition["layers"][index];
     std::vector<Intent> intents;
     for (const auto& p : params) {

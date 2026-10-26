@@ -4,6 +4,14 @@
 
 ## 根拠
 
+### 2026-10-26 改訂（下表の旧制限に優先）
+
+- endpointのhostはserver.xmlのIPv4。0.0.0.0だけ127.0.0.1へ変換し、接続前にローカルbindを検査する。ポート取得方法は維持。
+- Arena 7.27.1 rev15990、4 Layer／1 GroupのWebSocket取得を`evidence/ws-groups-20261026.json`、変更後を`evidence/ws-groups-ui-20261026.json`へ保存。Group内Layerもトップレベルlayersに含まれ、Group側layersは同一ID・同一内容の複写だった。
+- UI照合時の番号1〜4のIDは順に1621342719811、1792997542341、1499337861306、1621342719821。Group内は2・3。UIのGalactucity／空Layer／Window Capture／Layer Controlとトップレベル配列が一致。
+- Group内外とも番号−1を使用し、元LayerのIDを追跡しない。ID・内容が一致するGroup側複写だけをキー重複計数から除外する。Groupに配置されたEffect自体は除外しない。
+- 新DLLによるGroup内外へのset・復元、Group追加／削除操作、Mask境界、同Column映像への反映は未確認。
+
 - 共通通信化（2026-10-23）：Windows／MacともWebSocket++／Asioを使う。設定場所はOSのDocuments取得APIから解決する。MacのDocuments配置は公式Directory Listで確認、server.xml形式・ホスト実行名・実接続は未検証。`set_sent`は送信キュー受理、成功判定は従来どおり読戻しと別に行う。
 - `docs/evidence/ws-native-plugin-20261023.json`に保存した実受信Composition。Clip内のEffectとparams、Layerのtransition／maskmodeを解析した。
 - Node-REDによるTransition／Mask設定成功は仕様書冒頭の利用者報告。新DLLによる実機成功とは区別する。

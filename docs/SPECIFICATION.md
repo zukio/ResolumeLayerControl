@@ -39,6 +39,30 @@ WebSocket専用の`Layer Control`を旧OSC診断Probeとは別DLLとして追加
 - 未再生・プレビュー専用のClipはLayer設定を変更しない。**Clipが非Activeになった（または無効化・削除された）ら、適用前にTarget Layerが持っていた値（ベースライン）へ戻す。** 同じ項目を別のLayer Control ClipがActiveで管理している間は復元せず、そのClipの値へ切り替えるだけとする。何も管理しなくなった時だけ復元する（0.4版で変更。旧：自動復元しない）。
 - PluginとResolume間の受信・送信はWebSocketに統一する。既存の外部OSC運用には介入せず、プラグインからOSCを送信する互換経路は実装しない。
 
+### 2026-10-26 改訂：固定IPv4・Groupと併用条件
+
+本節は上記2026-10-23の接続先固定・Group禁止の判断を改訂する。
+
+- 固定IP不可だった理由はプラグイン独自のアドレス制限と127.0.0.1固定接続であり、Resolumeの制約ではない。`server.xml`のaddressが0.0.0.0なら127.0.0.1、それ以外なら指定IPv4へ接続する。接続前のローカルbind検査で、このPCで利用できないアドレスを拒否する。DHCP／固定の割当方式は判別しない。IPv6・ホスト名・別PC制御は対象外。
+- Groupの存在による全面停止を撤廃する。Group内外ともトップレベル`layers[番号−1]`を制御する。Group自体はTargetに指定しない。`layergroups[].layers`は正規LayerとID・内容が一致した場合だけ参照用の複写としてキー重複計数から除外する。不整合・欠損・Layer ID重複は送信せず記録する。
+- **Target Layerは常に現在のLayer番号を指定する。** 元のLayer 1がLayer 4へ移っても追跡せず、Target=1は新しいLayer 1を制御する。Clip入替えだけではLayer番号は変わらない。Group追加・削除に伴うLayer数・順序の変更も同じ。存在しない番号を他Layerへ補正しない。復元は番号でなく管理開始時のパラメータIDを使用する。保存値・UI番号の自動変更は行わない。
+
+| 意図的な制限・併用条件 | 現行動作／影響 |
+| --- | --- |
+| Clip以外への配置 | Layer／Group／CompositionのEffectとして配置しても制御しない。Clip内video.effectsの一意なInstance Keyが必要 |
+| 非Active・プレビュー専用・Enabled OFF | 指定値を適用しない。以前管理していた項目は復元対象 |
+| 本プラグイン自身のEffect Bypass | true・不明なら適用しない。Layer／Group Bypass、Solo、Opacity 0の存在自体では拒否しないがホスト動作は個別に実機検証する |
+| 同一項目への複数Activeインスタンス | 同じ指定値でも競合として送信抑止。異なるLayerやTransitionとMaskの併用は禁止しない |
+| 同一項目への手動操作・外部制御・アニメーション | 併用は禁止しないが、Active中は次のComposition通知で指定値へ戻すため独立した値の管理はできない |
+| Clip複製・Preset | 操作は禁止しない。実行時キーが不在／重複なら送信しない。全保存互換条件は未検証 |
+| 値と対象 | 定義済み選択肢、Duration 0〜10秒、Target 1〜1024。ホストの型・範囲・options・IDも検査。不明値を代用しない |
+| 接続・復旧 | Arena限定。設定は起動時に一度読む。XML不正・無効・接続失敗・不正JSONでは停止。自動再送・再接続なし。失敗pathは接続中隔離 |
+| 容量 | 1 DLLあたり128インスタンス、未完了／失敗384 path、受信16 MiB／待機32件・32 MiB、送信待機1 MiB。上限超過で抑止／停止 |
+| 最後のインスタンス削除・終了 | Runtime終了時のベースライン復元は行わない。通常の非Active化による復元とは異なる |
+| 映像・Mask | Group併用許可はMaskのGroup境界や同Column Transition適用の合格を意味しない。Auto Pilot／Fader Start等も禁止せず個別検証対象 |
+
+資料確認済み：公式[API Reference](https://resolume.com/docs/restapi/)はindexが1始まりで並び替えにより変化することとby-idアクセスを説明する。実機UI・構造の照合と未実施条件は[VALIDATION.md](VALIDATION.md)参照。
+
 ### この版が根拠にする既存の実測
 
 - 対象環境：Resolume Arena 7.27.1（利用者の2026-10-22〜23試験）。Node-REDからTransition Blend Mode、Duration、Mask Modeの設定変更に成功。Transition Blend Mode／Mask Modeは取得したパラメータIDを利用し、Durationは`/composition/layers/3/transition/duration`への`set`で成功。パラメータIDは固定しない。

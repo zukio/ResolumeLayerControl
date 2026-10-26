@@ -70,6 +70,7 @@ def rejected_settings(executable):
             (f'<ServerController enabled="0" port="{port}" address="0.0.0.0"/>', "disabled"),
             (f'<ServerController enabled="1" port="{port}" address="0.0.0.0">', "failure"),
             ('<ServerController enabled="1" port="0" address="0.0.0.0"/>', "failure"),
+            (f'<ServerController enabled="1" port="{port}" address="203.0.113.1"/>', "failure"),
             (None, "failure"),
         ]
         for index, (xml, expected) in enumerate(cases):
@@ -112,15 +113,16 @@ def rejected_settings(executable):
 
 def main():
     executable = str(Path(sys.argv[1]).resolve())
+    host = sys.argv[2] if len(sys.argv) > 2 else "127.0.0.1"
     rejected_settings(executable)
     with tempfile.TemporaryDirectory() as folder, socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
+        listener.bind((host, 0))
         listener.listen()
         listener.settimeout(5)
         log = Path(folder) / "runtime-\u65e5\u672c\u8a9e.jsonl"
         # Inject only into the test executable; never change the real host preferences.
         config = Path(folder) / "server.xml"
-        config.write_text(f'<ServerController enabled="1" port="{listener.getsockname()[1]}" address="127.0.0.1"/>')
+        config.write_text(f'<ServerController enabled="1" port="{listener.getsockname()[1]}" address="{host}"/>')
         copied = Path(folder) / ("runtime_smoke" + Path(executable).suffix)
         shutil.copy2(executable, copied)
         # Obsolete settings must be ignored, even if present and invalid.
@@ -184,6 +186,8 @@ def main():
             assert sum(row["event"] == "restore_sent" for row in rows) == 1
             assert sum(row["event"] == "readback" for row in rows) == 2
             assert not any(row["event"] == "failure" for row in rows), rows
+            expected_host = "127.0.0.1" if host == "0.0.0.0" else host
+            assert any(row["event"] == "connected" and row["host"] == expected_host for row in rows), rows
             print("Common WebSocket integration passed: fragmented receive, difference-only set, readback, no loop, inactive/disabled, cancellation")
         finally:
             if process.poll() is None:
