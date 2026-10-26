@@ -1,5 +1,15 @@
 # 検証記録
 
+## ビルド設定と成果物の統一（2026-10-26）
+
+- 対象：LayerControl／LayerMaskControl。ソースは共通のまま、既存vcxprojをMakefileプロジェクトへ変更し、CMakeへBuild／Rebuild／Cleanを委譲。コンパイル設定・依存・JSON生成の二重定義を除去。SDKサンプル・旧Probeは対象外。
+- Windowsの全構成を`cmake/BuildOptions.cmake`で`/MT`・`/utf-8`に統一。同梱GLEWはRelease静的CRTなのでDebugも同じCRTを使用し、最適化OFFとデバッグ情報を維持。デバッグ版CRTのヒープ診断は対象外。
+- Windows DLLの出力を`binaries/x64/<構成>/`に統一。旧`build-control-plugins/source/plugins/{LayerControl,LayerMaskControl}/Release/`のDLLは、新しい出力の存在を確認して削除した。中間ライブラリ・生成プロジェクトは作業フォルダーに残す。Macのbundle出力先は変更していない。
+- 検証環境：Windows、VS2022 MSBuild 17.14.40、Windows SDK 10.0.28000.0。既存`FFGLPlugins.sln`から対象2プロジェクトをRelease／x64、`/m`でビルド成功。共有ビルドツリーの処理はラッパー内のファイルロックで直列化。CMake直接実行でも両プラグインのRelease／Debugビルド成功。
+- `LayerControl.vcxproj /t:Rebuild /p:Configuration=Release /p:Platform=x64`成功。`LayerMaskControl.vcxproj /t:Clean /p:Configuration=Debug /p:Platform=x64`で対象Debug DLLだけが削除され、LayerControl Debugと両Release DLLが残ることを確認。手順はSETUP.md。GUIのメニュー操作自体は未実施で、同じプロジェクトをMSBuildで検証した。
+- テスト：`cmake -S tests -B build-control-tests -G "Visual Studio 17 2022" -A x64`、Releaseビルド、`ctest --test-dir build-control-tests -C Release --output-on-failure`成功（5/5、通信ランタイム試験を含む）。生成vcxprojでも/MT・/utf-8と出力先を確認。
+- 残る制約：Debugリンクで同梱GLEWのPDB欠損警告LNK4099あり。GLEW内部のデバッグ情報は利用不可。CRT競合警告LNK4098は今回なし。Macビルド、Arenaへの導入・映像・同Column Transition反映は本整理では未実施。
+
 ## 固定IPv4・Group対応（2026-10-26）
 
 - 変更：server.xmlの特定IPv4を接続先へ渡す。0.0.0.0は127.0.0.1へ変換。ローカルbindでそのPCで利用可能か確認し、IPv6・ホスト名・不正アドレスを拒否。Group全面拒否を削除し、Group側LayerのID・内容を正規layers配列と照合して識別の二重計数を防ぐ。

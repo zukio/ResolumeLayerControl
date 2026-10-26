@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <RlcRoot>$(MSBuildThisFileDirectory)..\</RlcRoot>
+    <CMakeExe Condition="'$(CMakeExe)'==''">cmake</CMakeExe>
+    <RlcCommand>&quot;$(CMakeExe)&quot; -DPLUGIN_TARGET=$(RlcTarget) -DCONFIG=$(Configuration) &quot;-DPYTHON_EXE=$(PythonExe)&quot;</RlcCommand>
+    <NMakeBuildCommandLine>$(RlcCommand) -DACTION=Build -P &quot;$(MSBuildThisFileDirectory)BuildFromVisualStudio.cmake&quot;</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>$(RlcCommand) -DACTION=Rebuild -P &quot;$(MSBuildThisFileDirectory)BuildFromVisualStudio.cmake&quot;</NMakeReBuildCommandLine>
+    <NMakeCleanCommandLine>$(RlcCommand) -DACTION=Clean -P &quot;$(MSBuildThisFileDirectory)BuildFromVisualStudio.cmake&quot;</NMakeCleanCommandLine>
+    <NMakeOutput>$(RlcRoot)binaries\x64\$(Configuration)\$(ProjectName).dll</NMakeOutput>
+    <OutDir>$(RlcRoot)binaries\x64\$(Configuration)\</OutDir>
+    <IntDir>$(RlcRoot)build-control-plugins\vs-wrapper\$(ProjectName)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(RlcRoot)source\control\*.h;$(RlcRoot)source\control\*.cpp;$(RlcRoot)source\plugins\$(ProjectName)\*.cpp;$(RlcRoot)definitions\$(ProjectName).json;$(RlcRoot)CMakeLists.txt;$(RlcRoot)cmake\*.cmake" />
+  </ItemGroup>
+</Project>

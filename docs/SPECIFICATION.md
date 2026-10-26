@@ -41,6 +41,8 @@ WebSocket専用の`Layer Control`を旧OSC診断Probeとは別DLLとして追加
 
 ### 2026-10-26 改訂：固定IPv4・Groupと併用条件
 
+ビルド構成の整理：対象2プラグインはCMakeをビルド設定の唯一の管理元とする。既存Visual StudioプロジェクトはCMakeへ委譲する入口として維持する。Windows DLLは`binaries/x64/<構成>/`へ出力する。Windowsは全構成で同梱GLEWに合わせた静的Release CRT（`/MT`）とUTF-8を使用し、Debugは最適化OFF・デバッグ情報ありとする。手順は[SETUP.md](SETUP.md)。Macのビルド・ホスト動作は引き続き未検証。
+
 本節は上記2026-10-23の接続先固定・Group禁止の判断を改訂する。
 
 - 固定IP不可だった理由はプラグイン独自のアドレス制限と127.0.0.1固定接続であり、Resolumeの制約ではない。`server.xml`のaddressが0.0.0.0なら127.0.0.1、それ以外なら指定IPv4へ接続する。接続前のローカルbind検査で、このPCで利用できないアドレスを拒否する。DHCP／固定の割当方式は判別しない。IPv6・ホスト名・別PC制御は対象外。

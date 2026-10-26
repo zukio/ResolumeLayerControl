@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(LayerControlTests LANGUAGES CXX)
+include(../cmake/BuildOptions.cmake)
 enable_testing()
 include(../cmake/GeneratePlugin.cmake)
 rlc_generate_definition(LayerControl)

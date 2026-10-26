@@ -3,10 +3,7 @@ project(FFGL-SDK
     VERSION 2.2
     LANGUAGES CXX
 )
-if(MSVC)
-    # Match the vendored static GLEW and the maintained Release vcxproj builds.
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-endif()
+include(cmake/BuildOptions.cmake)
 
 # resolve dependencies if using vcpkg
 if (EXISTS CACHE{VCPKG_MANIFEST_FILE})

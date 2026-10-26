@@ -17,6 +17,10 @@
 
 保守時は次の点に注意してください。
 
+- **ビルド設定は`CMakeLists.txt`と`cmake/`へ集約しています。** ソース・依存追加はCMake側だけを変更します。`build/windows/LayerControl.vcxproj`と`LayerMaskControl.vcxproj`は呼出し用で、独自のコンパイル設定を追加しません。
+- 共通コンパイル条件は`cmake/BuildOptions.cmake`、通信依存は`ControlRuntime.cmake`、DLL出力・プラグイン登録は`ControlPlugin.cmake`、JSON生成は`GeneratePlugin.cmake`です。Visual Studioの委譲処理は`VisualStudioWrapper.props`と`BuildFromVisualStudio.cmake`です。
+- 配布用Windows DLLは`binaries/x64/<構成>/`に一本化しています。`build-control-plugins/`と`build-control-tests/`は再生成可能な作業フォルダーです。
+
 - **`source/generated/`は直接編集しません。** JSONを変更し、[generate_plugin.py](N:/data/C++/ResolumeLayerControl/tools/generate_plugin.py)で再生成します。
 - パラメータの`id`や選択肢の順番は保存済みCompositionに関係するため、安易に変更しません。
 - `source/control/`の変更は、Layer ControlとLayer Mask Controlの両方に影響します。

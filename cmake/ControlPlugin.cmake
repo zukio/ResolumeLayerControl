@@ -9,6 +9,13 @@ function(rlc_add_plugin target name)
     target_link_libraries(${target} PRIVATE ffgl::sdk rlc-runtime)
     set_target_properties(${target} PROPERTIES OUTPUT_NAME ${name} PREFIX "")
     if(WIN32)
+        if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+            message(FATAL_ERROR "Layer Control Windows builds require x64")
+        endif()
+        set_target_properties(${target} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${RLC_ROOT}/binaries/x64/$<CONFIG>"
+            LIBRARY_OUTPUT_DIRECTORY "${RLC_ROOT}/binaries/x64/$<CONFIG>"
+            PDB_OUTPUT_DIRECTORY "${RLC_ROOT}/binaries/x64/$<CONFIG>")
         target_sources(${target} PRIVATE "${RLC_ROOT}/build/windows/FFGLPlugins.def")
     elseif(APPLE)
         set_target_properties(${target} PROPERTIES BUNDLE TRUE BUNDLE_EXTENSION bundle

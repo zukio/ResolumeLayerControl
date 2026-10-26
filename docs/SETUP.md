@@ -9,7 +9,9 @@
 
 ## ビルド
 
-Visual Studio 2022とC++デスクトップ開発ツールを使用します。
+Visual Studio 2022とC++デスクトップ開発ツール、CMake 3.15以上、Python 3を使用します。`cmake`をPATHから実行できる状態にしてください。
+
+**対象2プラグインのビルド設定はCMakeが唯一の管理元です。** 既存の`.sln`／`.vcxproj`はCMakeを呼ぶ入口として残しています。Visual Studioからでも下記CMakeコマンドからでも、同じソース・依存関係・生成処理・ビルド条件で作成します。SDKサンプルと旧Probeのプロジェクトはこの統一の対象外です。
 
 1. `build\windows\FFGLPlugins.sln`を開く。
 2. 構成を`Release`、プラットフォームを`x64`にする。
@@ -23,6 +25,10 @@ msbuild build\windows\FFGLPlugins.sln "/t:effects\LayerMaskControl" /p:Configura
 ```
 
 DLLは`binaries\x64\Release\`に出力されます。配置するのはDLLのみです。DLL隣接JSONは読み込みません。
+
+Build／Rebuild／Cleanは対象プラグインのCMakeターゲットへ委譲します。2プロジェクトが並列に開始しても、共通ビルドツリーへの処理はロックで直列化します。Visual Studioからの実行中に別端末で同じツリーのCMakeビルドを実行しないでください。CMakeやPythonの場所を明示する場合はMSBuildに`/p:CMakeExe="絶対パス"`、`/p:PythonExe="絶対パス"`を渡せます。Python未指定時はCMakeが検出します。
+
+WindowsはRelease／Debugとも静的CRT（`/MT`）、UTF-8（`/utf-8`）を使用します。同梱GLEWがRelease用CRTのためDebugも同じCRTへ揃えています。Debugの最適化OFF・デバッグ情報は維持しますが、デバッグ版CRTのヒープ診断は使用しません。
 
 ## 両OS共用のCMakeビルド
 
@@ -45,7 +51,9 @@ cmake --build build-control-tests
 ctest --test-dir build-control-tests --output-on-failure
 ```
 
-CMake出力は`build-control-plugins/source/plugins/LayerControl/`、`LayerMaskControl/`配下です。Windowsでは`Release/`下のDLL、Macでは`.bundle`全体を使います。Macの配置先はユーザーの`Documents/Resolume Arena/Extra Effects`です。Macの設定はFoundationから取得したDocuments配下の`Resolume Arena/Preferences/server.xml`を参照します。実行名候補・XML形式を確認できない場合は接続しません。
+WindowsのDLL出力はビルド入口にかかわらず`binaries/x64/Release/`（Debugは`binaries/x64/Debug/`）です。`build-control-plugins/`はCMake生成プロジェクト・中間ファイル用、`build-control-tests/`はテスト実行ファイル・結果用で、手編集しません。以前の`build-control-plugins/source/plugins/*/Release/*.dll`は旧出力です。新しい導入には使用しないでください。
+
+Macの出力先は従来どおり`build-control-plugins/source/plugins/LayerControl/`、`LayerMaskControl/`配下で、`.bundle`全体を使います。Macの配置先はユーザーの`Documents/Resolume Arena/Extra Effects`です。Macの設定はFoundationから取得したDocuments配下の`Resolume Arena/Preferences/server.xml`を参照します。実行名候補・XML形式を確認できない場合は接続しません。
 
 Mac上で本体の実行名、XML、接続、終了、パススルー映像を確認してから配布可否を判定してください。署名・公証・Gatekeeperを含む配布試験は未実施です。依存ライセンスは`deps/CONTROL-LICENSES.txt`を配布物へ添付します。
 

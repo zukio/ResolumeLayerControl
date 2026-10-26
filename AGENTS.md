@@ -43,6 +43,8 @@ ResolumeのWebSocket Composition通知を契機に、ActiveなEffect Clipの設�
 
 現行のビルド・導入手順はdocs/SETUP.mdを参照する。AT-01〜AT-17の合格条件は仕様書7節に従う。部分的な成立を全体の合格として報告しない。
 
+LayerControl／LayerMaskControlのビルド設定はCMakeへ集約する。既存のbuild/windowsの対象vcxprojはCMakeへの委譲用であり、独自のソース一覧・依存・コンパイル設定を追加しない。Windowsの配布用DLLはbinaries/x64/<構成>/へ出力する。build-control-plugins／build-control-testsは生成物で手編集しない。
+
 ## Composition通知・Active判定・状態同期
 
 - WebSocketのComposition状態通知を契機にする。定期ポーリングや再生位置の巻き戻りをトリガー判定に使わない。
