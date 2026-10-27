@@ -13,6 +13,9 @@ struct Intent {
     std::string owner, path;
     Json actual, desired;
     double tolerance = 0;
+    std::string property;
+    bool force = false;
+    std::uint64_t revision = 0;
 };
 inline bool Matches(const Json& actual, const Json& desired, double tolerance = 0) {
     if (actual.is_number() && desired.is_number() && tolerance > 0)
@@ -23,18 +26,28 @@ class StateReconciler {
 public:
     // No outbound queue: candidates expire with the notification that created them.
     std::vector<Intent> Plan(const std::vector<Intent>& intents) const {
-        if (pending.size() + failed.size() >= Capacity) return {};
-        std::map<std::string, unsigned> owners;
-        for (const auto& i : intents) ++owners[i.path];
+        if (pending.size() >= Capacity) return {};
+        std::map<std::string, Intent> unique;
+        std::set<std::string> conflicts;
+        for (const auto& i : intents) {
+            auto inserted = unique.emplace(i.path, i);
+            if (!inserted.second && (inserted.first->second.desired != i.desired ||
+                inserted.first->second.actual != i.actual)) conflicts.insert(i.path);
+        }
         std::vector<Intent> result;
-        for (const auto& i : intents)
-            if (owners[i.path] == 1 && !i.actual.is_null() && !Matches(i.actual, i.desired, i.tolerance) &&
-                pending.count(i.path) == 0 && failed.count(i.path) == 0)
+        for (const auto& entry : unique) {
+            const auto& i = entry.second;
+            if (!conflicts.count(i.path) && !i.actual.is_null() &&
+                (i.force || !Matches(i.actual, i.desired, i.tolerance)) && !pending.count(i.path))
                 result.push_back(i);
+        }
         return result;
     }
+    const Intent* Pending(const std::string& path) const {
+        auto it = pending.find(path); return it == pending.end() ? nullptr : &it->second;
+    }
     void Sent(const Intent& intent) {
-        if (pending.size() + failed.size() >= Capacity) throw std::runtime_error("request tracking limit");
+        if (pending.size() >= Capacity) throw std::runtime_error("request tracking limit");
         pending[intent.path] = intent;
     }
     bool ReadBack(const std::string& path, const Json& value) {
@@ -43,22 +56,18 @@ public:
         pending.erase(it);
         return true;
     }
-    // A failure is latched for the connection: no speculative automatic retries.
-    void Fail(const std::string& path) {
-        pending.erase(path);
-        if (failed.size() < Capacity) failed.insert(path);
-    }
-    void Reset() { pending.clear(); failed.clear(); }
+    // Release only this request. Runtime rate-limits recovery from fresh snapshots.
+    void Fail(const std::string& path) { pending.erase(path); }
+    void Reset() { pending.clear(); }
     std::size_t PendingCount() const { return pending.size(); }
     std::vector<std::string> PendingPaths() const {
         std::vector<std::string> result;
         for (const auto& item : pending) result.push_back(item.first);
         return result;
     }
-    std::size_t TrackedCount() const { return pending.size() + failed.size(); }
+    std::size_t TrackedCount() const { return pending.size(); }
     static constexpr std::size_t Capacity = 384;
 private:
     std::map<std::string, Intent> pending;
-    std::set<std::string> failed;
 };
 }

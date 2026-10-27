@@ -18,6 +18,7 @@ struct Evaluation {
     std::string status;
     std::uint64_t revision = 0;
     Json evidence = Json::object();
+    std::set<std::string> heldProperties;
 };
 struct ControlSource {
     virtual ~ControlSource() = default;
@@ -82,36 +83,7 @@ private:
         for (auto& weak : sources) if (auto source = weak.lock()) result.push_back(source);
         return result;
     }
-    void Composition(const Json& composition) {
-        struct Candidate { std::shared_ptr<ControlSource> source; Evaluation evaluation; };
-        std::vector<Candidate> candidates;
-        std::vector<Intent> all;
-        bool evaluationFailed = false;
-        for (auto& source : Sources()) {
-            try {
-                auto evaluation = source->Evaluate(composition);
-                Log({{"event", "gate"}, {"owner", source->Key()}, {"status", evaluation.status}, {"evidence", evaluation.evidence}});
-                for (auto& intent : evaluation.intents) {
-                    Log({{"event", "compare"}, {"owner", intent.owner}, {"path", intent.path}, {"actual", intent.actual}, {"desired", intent.desired}});
-                    if (reconciler.ReadBack(intent.path, intent.actual)) {
-                        deadlines.erase(intent.path);
-                        Log({{"event", "readback"}, {"path", intent.path}, {"value", intent.actual}});
-                    }
-                    all.push_back(intent);
-                }
-                candidates.push_back({source, std::move(evaluation)});
-            } catch (const std::exception& e) { evaluationFailed = true; Log({{"event", "invalid_state"}, {"owner", source->Key()}, {"reason", e.what()}}); }
-        }
-        for (const auto& intent : reconciler.Plan(all)) {
-            if (stop.load()) return;
-            const auto owner = std::find_if(candidates.begin(), candidates.end(), [&](const Candidate& c) { return c.source->Key() == intent.owner; });
-            if (owner == candidates.end() || owner->source->Revision() != owner->evaluation.revision) continue;
-            // The first value seen before our own change is the one to return to.
-            baselines.emplace(intent.path, Baseline{intent.actual, intent.tolerance});
-            Send(intent, "set_sent");
-        }
-        if (evaluationFailed) return;
-        // Confirm in-flight requests (including restores) even when no source is active.
+    void Confirm(const Json& composition) {
         for (const auto& path : reconciler.PendingPaths()) {
             const auto* current = FindParameter(composition, path);
             if (current && current->contains("value") && reconciler.ReadBack(path, (*current)["value"])) {
@@ -119,48 +91,135 @@ private:
                 Log({{"event", "readback"}, {"path", path}, {"value", (*current)["value"]}});
             }
         }
-        // Restore only paths that no active source manages any more.
-        std::set<std::string> active;
-        for (const auto& intent : all) active.insert(intent.path);
+    }
+    void Expire() {
+        const auto now = std::chrono::steady_clock::now();
+        for (auto it = deadlines.begin(); it != deadlines.end();) {
+            if (now < it->second) { ++it; continue; }
+            reconciler.Fail(it->first);
+            Log({{"event", "readback_timeout"}, {"path", it->first}});
+            it = deadlines.erase(it);
+        }
+    }
+    void Composition(const Json& composition) {
+        // Confirm the received state before considering a timeout.
+        Confirm(composition);
+        Expire();
+        std::vector<Intent> all;
+        std::map<std::string, std::pair<std::shared_ptr<ControlSource>, std::uint64_t>> revisions;
+        std::set<std::string> active, liveOwners;
+        for (auto& source : Sources()) {
+            const auto owner = source->Key();
+            liveOwners.insert(owner);
+            auto& previous = ownerPaths[owner];
+            try {
+                auto evaluation = source->Evaluate(composition);
+                Log({{"event", "gate"}, {"owner", owner}, {"status", evaluation.status}, {"evidence", evaluation.evidence}});
+                if (source->Revision() != evaluation.revision || evaluation.status == "unresolved_or_duplicate_key") {
+                    for (const auto& old : previous) active.insert(old.first);
+                    continue;
+                }
+                revisions[owner] = {source, evaluation.revision};
+                std::map<std::string, std::string> next;
+                for (const auto& old : previous)
+                    if (evaluation.heldProperties.count(old.second)) {
+                        next.insert(old); active.insert(old.first);
+                    }
+                for (auto intent : evaluation.intents) {
+                    intent.revision = evaluation.revision;
+                    next[intent.path] = intent.property;
+                    active.insert(intent.path);
+                    all.push_back(intent);
+                    Log({{"event", "compare"}, {"owner", owner}, {"path", intent.path}, {"actual", intent.actual}, {"desired", intent.desired}});
+                }
+                previous = std::move(next);
+            } catch (const std::exception& e) {
+                // Only this owner's previous targets are unknown; others can restore.
+                for (const auto& old : previous) active.insert(old.first);
+                Log({{"event", "invalid_state"}, {"owner", owner}, {"reason", e.what()}});
+            }
+        }
+        for (auto it = ownerPaths.begin(); it != ownerPaths.end();)
+            if (!liveOwners.count(it->first)) it = ownerPaths.erase(it); else ++it;
         std::vector<Intent> restores;
         for (auto it = baselines.begin(); it != baselines.end();) {
             if (active.count(it->first)) { ++it; continue; }
             const auto* current = FindParameter(composition, it->first);
-            if (!current || !current->contains("value")) { Log({{"event", "baseline_dropped"}, {"path", it->first}}); it = baselines.erase(it); continue; }
+            // Missing once is not proof of deletion. Keep the restoration record.
+            if (!current || !current->contains("value")) { ++it; continue; }
             const auto& actual = (*current)["value"];
-            if (reconciler.ReadBack(it->first, actual)) deadlines.erase(it->first);
-            if (Matches(actual, it->second.value, it->second.tolerance)) { it = baselines.erase(it); continue; }
+            if (!reconciler.Pending(it->first) && Matches(actual, it->second.value, it->second.tolerance)) {
+                it = baselines.erase(it); continue;
+            }
             restores.push_back({"", it->first, actual, it->second.value, it->second.tolerance});
             ++it;
         }
-        for (const auto& intent : reconciler.Plan(restores)) {
+        auto unchanged = [&](const std::string& path) {
+            for (const auto& i : all) if (i.path == path) {
+                const auto& r = revisions.at(i.owner);
+                if (r.first->Revision() != r.second) return false;
+            }
+            return true;
+        };
+        Apply(all, false, unchanged);
+        Apply(restores, true);
+    }
+    void Apply(std::vector<Intent> intents, bool restoring,
+               const std::function<bool(const std::string&)>& unchanged = [](const auto&) { return true; }) {
+        // A new desired value supersedes an older generation. Responses never
+        // become the source of a desired value; only a fresh Composition does.
+        intents.erase(std::remove_if(intents.begin(), intents.end(), [&](const auto& i) { return !unchanged(i.path); }), intents.end());
+        for (auto& i : intents) {
+            const auto* pending = reconciler.Pending(i.path);
+            if (pending && pending->desired != i.desired) {
+                reconciler.Fail(i.path); deadlines.erase(i.path); i.force = true;
+            }
+        }
+        for (const auto& intent : reconciler.Plan(intents)) {
             if (stop.load()) return;
-            baselines.erase(intent.path);
-            Send(intent, "restore_sent");
+            if (!unchanged(intent.path)) continue;
+            const auto retry = retryAfter.find(intent.path);
+            if (retry != retryAfter.end() && retry->second.desired == intent.desired && retry->second.owner == intent.owner &&
+                retry->second.revision == intent.revision &&
+                std::chrono::steady_clock::now() < retry->second.until) continue;
+            // Capture before the first successful queued change; retain through restore readback.
+            const bool inserted = !restoring && baselines.emplace(intent.path, Baseline{intent.actual, intent.tolerance}).second;
+            if (!Send(intent, restoring ? "restore_sent" : "set_sent") && inserted) baselines.erase(intent.path);
         }
     }
-    void Send(const Intent& intent, const char* event) {
-        if (reconciler.TrackedCount() >= StateReconciler::Capacity) { Log({{"event", "pending_limit"}}); return; }
+    bool Send(const Intent& intent, const char* event) {
+        if (reconciler.TrackedCount() >= StateReconciler::Capacity) { Log({{"event", "pending_limit"}}); return false; }
         const Json request = {{"action", "set"}, {"parameter", intent.path}, {"value", intent.desired}};
-        if (!socket.Send(request.dump())) throw std::runtime_error("set transport failed; no retry");
+        if (!socket.Send(request.dump())) {
+            Defer(intent);
+            Log({{"event", "send_deferred"}, {"path", intent.path}});
+            return false;
+        }
         reconciler.Sent(intent);
         deadlines[intent.path] = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        Log({{"event", event}, {"owner", intent.owner}, {"path", intent.path}, {"actual", intent.actual}, {"desired", intent.desired}});
+        Log({{"event", event}, {"generation", ++generation}, {"owner", intent.owner}, {"path", intent.path}, {"actual", intent.actual}, {"desired", intent.desired}});
         if (!socket.Send(Json({{"action", "get"}, {"parameter", intent.path}}).dump()))
-            throw std::runtime_error("readback request failed; no retry");
+            Log({{"event", "readback_request_deferred"}, {"path", intent.path}});
+        return true;
+    }
+    void Defer(const Intent& intent) {
+        // Bounded cooldown history, independent of pending request capacity.
+        if (retryAfter.size() >= StateReconciler::Capacity && !retryAfter.count(intent.path)) retryAfter.erase(retryAfter.begin());
+        retryAfter[intent.path] = {intent.desired, intent.owner, intent.revision, std::chrono::steady_clock::now() + std::chrono::seconds(5)};
     }
     static const Json* FindParameter(const Json& node, const std::string& path) {
         static const std::string prefix = "/parameter/by-id/";
         if (path.compare(0, prefix.size(), prefix) != 0) return nullptr;
         const auto id = std::stoll(path.substr(prefix.size()));
-        return FindById(node, id);
+        return node.contains("layers") ? FindById(node["layers"], id) : nullptr;
     }
     static const Json* FindById(const Json& node, long long id) {
         if (node.is_object()) {
             const auto found = node.find("id");
             if (found != node.end() && found->is_number_integer() && found->get<long long>() == id && node.contains("valuetype")) return &node;
             for (const auto& child : node.items())
-                if (const auto* r = FindById(child.value(), id)) return r;
+                if (child.key() != "clips" && child.key() != "active_clip")
+                    if (const auto* r = FindById(child.value(), id)) return r;
         } else if (node.is_array()) {
             for (const auto& child : node) if (const auto* r = FindById(child, id)) return r;
         }
@@ -168,11 +227,13 @@ private:
     }
     void Run() noexcept {
         try {
+            try {
             const auto path = LogPathFromEnvironment();
             if (!path.empty()) {
                 log.open(path, std::ios::app);
-                if (!log) throw std::runtime_error("cannot open RLC_WS_LOG");
+                if (!log) { log.clear(); DebugLog("LayerControl: cannot open RLC_WS_LOG; continuing without file log\n"); }
             }
+            } catch (const std::exception&) { DebugLog("LayerControl: invalid log path; continuing without file log\n"); }
             auto file = HostSettingsFile();
             Log({{"event", "server_settings"}, {"path", file.u8string()}});
             const auto settings = ReadServerSettings(file);
@@ -183,32 +244,32 @@ private:
             Log({{"event", "connected"}, {"host", settings.host}, {"port", port}});
             std::string raw;
             while (!stop.load() && socket.Receive(raw)) {
-                const auto message = Json::parse(raw);
-                // Timeouts only quarantine a request; never poll or resend. Evaluated on inbound traffic.
-                const auto now = std::chrono::steady_clock::now();
-                for (auto it = deadlines.begin(); it != deadlines.end();) {
-                    if (now < it->second) { ++it; continue; }
-                    reconciler.Fail(it->first);
-                    Log({{"event", "readback_timeout"}, {"path", it->first}});
-                    it = deadlines.erase(it);
-                }
-                if (IsComposition(message)) { Composition(message); continue; }
-                const auto type = message.value("type", std::string());
-                // Resolume replies to by-id requests with a composition path plus id.
-                // Match the stable parameter id, not that presentation path.
-                const auto path = message.contains("id") && message["id"].is_number_integer() &&
-                    message["id"].get<long long>() > 0
-                    ? ParameterPath(message) : message.value("path", std::string());
-                if (type == "parameter_set") Log({{"event", "server_response"}, {"message", message}});
-                if ((type == "parameter_get" || type == "parameter_update") && message.contains("value") &&
-                    reconciler.ReadBack(path, message["value"])) {
-                    deadlines.erase(path);
-                    Log({{"event", "readback"}, {"path", path}, {"value", message["value"]}});
-                }
-                // Individual updates (including position) never start reconciliation.
-                if (message.contains("error") && !message["error"].is_null()) {
-                    if (!path.empty()) { reconciler.Fail(path); deadlines.erase(path); }
-                    Log({{"event", "server_error"}, {"message", message}});
+                try {
+                    const auto message = Json::parse(raw);
+                    if (!message.is_object()) continue;
+                    if (IsComposition(message)) { Composition(message); continue; }
+                    const auto type = message.value("type", std::string());
+                    // Resolume replies to by-id requests with a composition path plus id.
+                    // Match the stable parameter id, not that presentation path.
+                    const auto path = message.contains("id") && message["id"].is_number_integer() &&
+                        message["id"].get<long long>() > 0
+                        ? ParameterPath(message) : message.value("path", std::string());
+                    if (type == "parameter_set") Log({{"event", "server_response"}, {"message", message}});
+                    if ((type == "parameter_get" || type == "parameter_update") && message.contains("value") &&
+                        reconciler.ReadBack(path, message["value"])) {
+                        deadlines.erase(path);
+                        Log({{"event", "readback"}, {"path", path}, {"value", message["value"]}});
+                    }
+                    // Individual updates (including position) never start reconciliation.
+                    if (message.contains("error") && !message["error"].is_null()) {
+                        if (const auto* pending = reconciler.Pending(path)) {
+                            Defer(*pending); reconciler.Fail(path); deadlines.erase(path);
+                        }
+                        Log({{"event", "server_error"}, {"message", message}});
+                    }
+                    Expire();
+                } catch (const std::exception& e) {
+                    Log({{"event", "message_rejected"}, {"reason", e.what()}});
                 }
             }
             Log({{"event", "disconnected"}, {"pending", reconciler.PendingCount()}});
@@ -224,6 +285,10 @@ private:
     StateReconciler reconciler;
     struct Baseline { Json value; double tolerance = 0; };
     std::map<std::string, Baseline> baselines;
+    std::map<std::string, std::map<std::string, std::string>> ownerPaths;
+    struct Retry { Json desired; std::string owner; std::uint64_t revision; std::chrono::steady_clock::time_point until; };
+    std::map<std::string, Retry> retryAfter;
+    std::uint64_t generation = 0;
     std::map<std::string, std::chrono::steady_clock::time_point> deadlines;
     std::ofstream log;
     std::size_t logBytes = 0;

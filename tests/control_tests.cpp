@@ -70,9 +70,11 @@ int main(int argc, char** argv) {
         s[MaskMode] = 2;
         Check(Evaluate(c, s)[0].desired == "All Below", "mask enum mapping");
         auto competing = Evaluate(c, s); competing.push_back(competing[0]); competing[1].owner = "another";
-        Check(r.Plan(competing).empty(), "multiple active writers blocked");
+        Check(r.Plan(competing).size() == 1, "same-value owners share one request");
+        competing[1].desired = "Disabled";
+        Check(r.Plan(competing).empty(), "different-value owners are deferred");
         r.Fail("/parameter/by-id/103");
-        Check(r.Plan(Evaluate(c, s)).empty(), "failed request not retried");
+        Check(r.Plan(Evaluate(c, s)).size() == 1, "failure does not permanently reject fresh intents");
         r.Reset();
         Check(!Valid(definitions::LayerControl(), Duration, std::numeric_limits<float>::quiet_NaN()), "NaN rejected");
         Check(!Valid(definition, TargetLayer, 1.5f) && !Valid(definition, TargetLayer, 0), "bad layer rejected");
@@ -86,11 +88,11 @@ int main(int argc, char** argv) {
         Check(!Evaluate(c, s).empty(), "group member alias is not duplicate instance");
         c["layergroups"][0]["layers"][0]["id"] = 999;
         failed = false; try { Evaluate(c, s); } catch (...) { failed = true; }
-        Check(failed, "unknown group member fails closed");
+        Check(!failed, "unrelated stale group references do not block canonical layer");
         c["layergroups"][0]["layers"][0] = c["layers"][0];
         c["layergroups"][0]["layers"][0]["maskmode"]["value"] = "All Below";
         failed = false; try { Evaluate(c, s); } catch (...) { failed = true; }
-        Check(failed, "inconsistent group alias fails closed");
+        Check(!failed, "dynamic group alias differences do not block");
         c = Fixture();
         auto other = c["layers"][0]; other["id"] = 300;
         other["clips"] = Json::array(); other["maskmode"]["id"] = 303;
@@ -113,9 +115,25 @@ int main(int argc, char** argv) {
         r.Sent({"precision", "duration", 0, 0.10000000149, 0.000001});
         Check(r.ReadBack("duration", 0.1), "duration readback float precision");
         for (unsigned i = 0; i < StateReconciler::Capacity; ++i) r.Fail(std::to_string(i));
-        Check(r.TrackedCount() == StateReconciler::Capacity, "failed tracking bounded");
+        Check(r.TrackedCount() == 0, "failed history does not consume pending capacity");
         r.Fail("overflow");
-        Check(r.TrackedCount() == StateReconciler::Capacity, "failed tracking cannot grow");
+        Check(r.TrackedCount() == 0, "unrelated errors do not consume capacity");
+        {
+            auto partial = Fixture(); auto values = Defaults(definitions::LayerControl());
+            partial["layers"][0]["transition"]["duration"].erase("id");
+            std::set<std::string> held; Json errors; std::string status;
+            auto valid = BuildIntents(definitions::LayerControl(), partial, "test-key", values, status, &held, &errors);
+            Check(valid.size() == 1 && valid[0].path == "/parameter/by-id/101", "bad duration does not block blend");
+            Check(status == "partial" && held.count("transition.duration"), "only failed property held");
+            partial["layers"][0]["transition"]["duration"]["id"] = 102;
+            held.clear(); errors.clear();
+            valid = BuildIntents(definitions::LayerControl(), partial, "test-key", values, status, &held, &errors);
+            Check(valid.size() == 2 && held.empty(), "normal metadata recovers on next evaluation");
+            auto grouped = Fixture();
+            grouped["layergroups"] = Json::array({{{"layers", Json::array({grouped["layers"][0]})},
+                {"video", grouped["layers"][0]["clips"][0]["video"]}}});
+            Check(!ResolveClip(grouped, "test-key").clip, "real group effect placement still detects duplicate key");
+        }
         if (argc >= 2) {
             // Parse actual, unmodified capture. No synthetic fixture can pass host acceptance.
             std::ifstream file(argv[1]); Check(file.good(), "capture opens");

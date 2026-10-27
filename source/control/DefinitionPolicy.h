@@ -42,7 +42,8 @@ inline const Json& Property(const Json& root, const std::string& property) {
     throw std::runtime_error("empty property");
 }
 inline std::vector<Intent> BuildIntents(const Json& d, const Json& composition, const std::string& key,
-                                      const Settings& settings, std::string& status) {
+                                      const Settings& settings, std::string& status,
+                                      std::set<std::string>* held = nullptr, Json* errors = nullptr) {
     const auto& params = d.at("parameters");
     if (settings.size() != params.size()) throw std::runtime_error("settings size mismatch");
     for (unsigned i = 0; i < settings.size(); ++i)
@@ -59,22 +60,29 @@ inline std::vector<Intent> BuildIntents(const Json& d, const Json& composition, 
     std::vector<Intent> intents;
     for (const auto& p : params) {
         if (!p.contains("property")) continue;
-        const auto& actual = Property(layer,p.at("property"));
-        const float desired = settings.at(p.at("id").get<unsigned>());
-        if (p["type"] == "choice") {
-            intents.push_back(Choice(key,actual,p.at("options").at(static_cast<unsigned>(desired))));
-        } else if (p["type"] == "boolean") {
-            if (actual.value("valuetype","") != "ParamBoolean" || !actual.at("value").is_boolean()) throw std::runtime_error("invalid boolean metadata");
-            intents.push_back({key,ParameterPath(actual),actual["value"],desired != 0});
-        } else {
-            if (actual.value("valuetype","") != "ParamRange" || !actual.at("value").is_number() ||
-                !actual.at("min").is_number() || !actual.at("max").is_number() ||
-                desired < actual.at("min").get<double>() || desired > actual.at("max").get<double>())
-                throw std::runtime_error("invalid numeric metadata/range");
-            intents.push_back({key,ParameterPath(actual),actual["value"],desired,p.value("tolerance",0.0)});
+        try {
+            const auto& actual = Property(layer,p.at("property"));
+            const float desired = settings.at(p.at("id").get<unsigned>());
+            if (p["type"] == "choice") {
+                intents.push_back(Choice(key,actual,p.at("options").at(static_cast<unsigned>(desired))));
+            } else if (p["type"] == "boolean") {
+                if (actual.value("valuetype","") != "ParamBoolean" || !actual.at("value").is_boolean()) throw std::runtime_error("invalid boolean metadata");
+                intents.push_back({key,ParameterPath(actual),actual["value"],desired != 0});
+            } else {
+                if (actual.value("valuetype","") != "ParamRange" || !actual.at("value").is_number() ||
+                    !actual.at("min").is_number() || !actual.at("max").is_number() ||
+                    desired < actual.at("min").get<double>() || desired > actual.at("max").get<double>())
+                    throw std::runtime_error("invalid numeric metadata/range");
+                intents.push_back({key,ParameterPath(actual),actual["value"],desired,p.value("tolerance",0.0)});
+            }
+            intents.back().property = p.at("property").get<std::string>();
+        } catch (const std::exception& e) {
+            if (!held) throw;
+            held->insert(p.at("property").get<std::string>());
+            if (errors) (*errors)[p.at("property").get<std::string>()] = e.what();
         }
     }
-    status = "active";
+    status = held && !held->empty() ? "partial" : "active";
     return intents;
 }
 }

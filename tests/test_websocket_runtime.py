@@ -111,10 +111,96 @@ def rejected_settings(executable):
                     process.wait()
 
 
+def recovery_checks(conn, process):
+    def command(value):
+        process.stdin.write(value + "\n"); process.stdin.flush()
+        assert process.stdout.readline().strip() == "ok"
+    def expect(value, parameter=123):
+        assert receive(conn) == {"action": "set", "parameter": f"/parameter/by-id/{parameter}", "value": value}
+        assert receive(conn) == {"action": "get", "parameter": f"/parameter/by-id/{parameter}"}
+    def reply(value, parameter=123):
+        send(conn, {"type": "parameter_get", "id": parameter, "path": "/composition/layers/1/maskmode", "value": value})
+    snapshot = {"layers": [{"value": 1, "id": 123, "valuetype": "ParamRange"},
+                           {"value": 0, "id": 456, "valuetype": "ParamRange"}], "active": True}
+    command("enable")
+    snapshot.update(active2=True, shared=True)
+    send(conn, snapshot); expect(2)
+    reply(2); snapshot["layers"][0]["value"] = 2
+    send(conn, snapshot); quiet(conn)
+    command("disable")
+    send(conn, snapshot); quiet(conn)  # the second same-value owner still manages it
+    snapshot["active2"] = False
+    send(conn, snapshot); expect(1)
+    reply(1); snapshot["layers"][0]["value"] = 1
+    send(conn, snapshot); quiet(conn)
+    snapshot["shared"] = False
+    command("enable")
+    send(conn, snapshot); expect(2)
+    snapshot["desired"] = 3
+    send(conn, snapshot); expect(3)  # supersede while old request is still pending
+    reply(2)
+    send(conn, snapshot); quiet(conn)
+    snapshot["desired"] = 2
+    send(conn, snapshot); expect(2)
+    send(conn, {"type": "parameter_set", "id": 123, "error": "temporary rejection"})
+    send(conn, snapshot); quiet(conn)  # cooldown applies only to the failed value
+    snapshot["desired"] = 3
+    send(conn, snapshot); expect(3)  # a new desired value is immediately eligible
+    reply(2)  # late response from the superseded request cannot confirm 3
+    send(conn, snapshot); quiet(conn)
+    reply(3)
+    snapshot["layers"][0]["value"] = 3
+    send(conn, snapshot); quiet(conn)
+    # Failure of another source must not suppress this source's baseline restore.
+    snapshot["fault"] = True
+    command("disable")
+    send(conn, snapshot); expect(1)
+    reply(1)
+    snapshot["layers"][0]["value"] = 1
+    send(conn, snapshot); quiet(conn)
+    # One malformed payload must not terminate the worker.
+    conn.sendall(b'\x81\x01{')
+    snapshot.update(fault=False, active2=True, desired=2)
+    send(conn, snapshot); expect(2, 456)
+    # A correct response received beyond the deadline is consumed before expiry.
+    time.sleep(5.2)
+    reply(2, 456)
+    snapshot["layers"][1]["value"] = 2
+    send(conn, snapshot); quiet(conn)
+    snapshot.update(fault=True, active2=False)
+    send(conn, snapshot); quiet(conn)  # this owner's unknown state holds only its own baseline
+    snapshot.update(fault=False, active2=True)
+    send(conn, snapshot); quiet(conn)
+    snapshot["layers"][1]["value"] = 4
+    send(conn, snapshot); expect(2, 456)
+    # No readback: only this request expires, next fresh composition recovers it.
+    time.sleep(5.2)
+    send(conn, snapshot); expect(2, 456)
+    reply(2, 456)
+    snapshot["layers"][1]["value"] = 2
+    send(conn, snapshot); quiet(conn)
+    # Missing target snapshot retains the restoration record.
+    snapshot["active2"] = False
+    snapshot["layergroups"] = [{"layers": [{"id": 456, "valuetype": "ParamRange", "value": 999}]}]
+    saved = snapshot["layers"].pop()
+    send(conn, snapshot); quiet(conn)
+    snapshot["layers"].append(saved)
+    send(conn, snapshot); expect(0, 456)
+    send(conn, {"type": "parameter_set", "id": 456, "error": "temporary restore rejection"})
+    send(conn, snapshot); quiet(conn)
+    time.sleep(5.2)
+    send(conn, snapshot); expect(0, 456)
+    reply(0, 456)
+    snapshot["layers"][1]["value"] = 0
+    send(conn, snapshot); quiet(conn)
+
+
 def main():
     executable = str(Path(sys.argv[1]).resolve())
     host = sys.argv[2] if len(sys.argv) > 2 else "127.0.0.1"
-    rejected_settings(executable)
+    no_log = "--no-log" in sys.argv
+    if not no_log:
+        rejected_settings(executable)
     with tempfile.TemporaryDirectory() as folder, socket.socket() as listener:
         listener.bind((host, 0))
         listener.listen()
@@ -127,7 +213,7 @@ def main():
         shutil.copy2(executable, copied)
         # Obsolete settings must be ignored, even if present and invalid.
         copied.with_suffix(".json").write_text("not JSON")
-        env = dict(os.environ, RLC_WS_PORT="invalid-obsolete-setting", RLC_WS_LOG=str(log))
+        env = dict(os.environ, RLC_WS_PORT="invalid-obsolete-setting", RLC_WS_LOG=str(Path(folder) if no_log else log))
         process = subprocess.Popen([str(copied), str(config)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, text=True, env=env)
         try:
@@ -183,24 +269,30 @@ def main():
                 snapshot["layers"][0]["value"] = 1
                 send(conn, snapshot)
                 quiet(conn)
+                if not no_log:
+                    recovery_checks(conn, process)
                 start = time.monotonic()
                 process.stdin.write("quit\n")
                 process.stdin.flush()
                 process.wait(timeout=5)  # cancel while receive is blocked
                 assert process.returncode == 0, process.stderr.read()
                 assert time.monotonic() - start < 5
-            rows = [json.loads(line) for line in log.read_text().splitlines()]
-            assert sum(row["event"] == "set_sent" for row in rows) == 2
-            assert sum(row["event"] == "restore_sent" for row in rows) == 1
-            assert sum(row["event"] == "readback" for row in rows) == 3
-            assert not any(row["event"] == "failure" for row in rows), rows
-            expected_host = "127.0.0.1" if host == "0.0.0.0" else host
-            assert any(row["event"] == "connected" and row["host"] == expected_host for row in rows), rows
+            if not no_log:
+                rows = [json.loads(line) for line in log.read_text().splitlines()]
+                assert sum(row["event"] == "set_sent" for row in rows) == 10
+                assert sum(row["event"] == "restore_sent" for row in rows) == 5
+                assert sum(row["event"] == "readback" for row in rows) == 10
+                assert not any(row["event"] == "failure" for row in rows), rows
+                expected_host = "127.0.0.1" if host == "0.0.0.0" else host
+                assert any(row["event"] == "connected" and row["host"] == expected_host for row in rows), rows
             print("Common WebSocket integration passed: fragmented receive, difference-only set, readback, no loop, inactive/disabled, cancellation")
         finally:
             if process.poll() is None:
                 process.kill()
                 process.wait()
+
+    if not no_log:
+        subprocess.run([sys.executable, __file__, executable, host, "--no-log"], check=True)
 
 
 if __name__ == "__main__":

@@ -73,6 +73,8 @@ Mac上で本体の実行名、XML、接続、終了、パススルー映像を�
 
 ## 確認
 
+2026-10-27の復帰処理改修：Group複写との全内容一致と失敗pathの永久隔離を廃止。同じ値の複数Active Clipは併用可能。明示エラー時は同じ要求だけ5秒待機し、その後のComposition通知で再評価します。新しい指定値・所有者・設定revisionは待機を引き継ぎません。ログを作成できなくても制御は継続します。切断後の再接続は未対応のため、接続失敗の復旧手順は従来どおりです。詳細は[VALIDATION_GATES_AUDIT.md](VALIDATION_GATES_AUDIT.md)。
+
 利用者の実機確認では、Layer ControlのTransition Blend Mode変更と、別ClipをActiveにしたときの復元を確認済みです。同じColumnで始まる映像へのTransition反映は未確認です。Layer Mask ControlのMask Mode変更も実機で未確認です。
 
 送信ログの`set_sent`は共通通信の送信キューへの受理を示します。実送信完了、Resolumeでの反映、映像への効果を保証しません。ログと再現手順は[VALIDATION.md](VALIDATION.md)を参照してください。

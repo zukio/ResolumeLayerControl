@@ -14,11 +14,9 @@ public:
         Evaluation r; r.revision = revision.load();
         if (!alive) { r.status = "destroyed"; return r; }
         const auto key = Key();
-        r.intents = BuildIntents(definition,c,key,settings,r.status);
+        r.intents = BuildIntents(definition,c,key,settings,r.status,&r.heldProperties,&r.evidence);
         r.evidence["plugin"] = definition.at("name");
         r.evidence["target_layer"] = settings[RoleIndex(definition,"target")];
-        auto resolved = ResolveClip(c,key);
-        if (resolved.clip) { r.evidence["clip_id"] = resolved.clip->at("id"); r.evidence["connected"] = resolved.clip->at("connected"); }
         return r;
     }
     std::uint64_t Revision() const override { return revision.load(); }
