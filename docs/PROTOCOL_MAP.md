@@ -4,6 +4,13 @@
 
 ## 根拠
 
+### 2026-10-27 読戻し応答の実測
+
+Arena 7.27.1 rev15990、port 8080。`evidence/ws-readback-wire-20261027.json`を参照。
+by-idでgetしても、parameter_getのpathは要求pathと一致しない。
+Maskは`/composition/layers/1/maskmode`、Transition Blendは`/composition/layers/1/video/transition/mixer/blendmode`、Durationは`/composition/layers/1/transition/duration`だった。
+各応答に要求対象の整数`id`が付くため、RuntimeはこのIDをby-id形式に正規化して未完了要求と対応付け、値の一致で読戻しを確認する。pathだけの完全一致で確認しない。parameter_set応答は読戻しとみなさない。
+
 ### 2026-10-26 改訂（下表の旧制限に優先）
 
 - endpointのhostはserver.xmlのIPv4。0.0.0.0だけ127.0.0.1へ変換し、接続前にローカルbindを検査する。ポート取得方法は維持。

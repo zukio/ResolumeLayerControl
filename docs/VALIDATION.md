@@ -1,5 +1,27 @@
 # 検証記録
 
+## 手動変更後の再適用停止・読戻しID照合修正（2026-10-27）
+
+- 最新報告：Layer Control／Layer Mask ControlでPlugin適用後、Resolume側で通常操作により値を変更するとPluginが再適用しない。先の「フォーカスが外れたときの復元」だけの問題としては扱わない。
+- 実機再現：Windows／Arena 7.27.1 rev15990、Example、4 Layer／10 Column／1 Group、port 8080。Layer 1・Column 8のLayer Mask ControlはEnabled、Target 1、All Below、Connected、bypassed=false。Layer 4・Column 8のLayer ControlもEnabled、Target 1、Cube、Connected、bypassed=false。対象Layer 1はDisabled／Addのままで、両Clipを再トリガーしても指定値にならなかった。MaskをOne Belowへ手動設定して再トリガーしてもOne Belowのまま。試験後は元のDisabledへ戻した。Compositionの保存・再起動・構造変更は行っていない。
+- 証跡：`evidence/ws-manual-before-20261027.json`、`evidence/ws-manual-triggered-20261027.json`。`ws-manual-retrigger-20261027.json`は実トリガー前の追加スナップショットであり、成功後の証跡ではない。使用中のExtra Effects DLLは2026-10-26の版で、今回ビルドした修正版ではない。
+- プロトコル実測：`evidence/ws-readback-wire-20261027.json`。`/parameter/by-id/1793073084789`へのgetは`id:1793073084789`と`path:/composition/layers/1/maskmode`を返した。Transition BlendとDurationも同様にby-id以外のpathで返る。従来Runtimeはpath完全一致で未完了要求を管理していたため、この正しい読戻しを無視する。後続Compositionで一致を確認できないまま5秒を超えるとpathが隔離され、以後の適用・復元を抑止する。
+- 修正：共通Runtimeで応答の正の整数idを`/parameter/by-id/<id>`に正規化して読戻し・エラーを対応付ける。idのない従来のby-id応答も受け付ける。set応答だけでは成功にせず、get／updateの値一致を確認する。無条件再送・ポーリング・タイムアウト解除は追加しない。
+- 回帰検証：実測と同じid＋Composition path形式へテストを変更すると、修正前は非Active復元待ちでタイムアウト。修正後は`ctest --test-dir build-control-tests -C Release --output-on-failure`で5/5合格（`tests/test_websocket_runtime.py`を含む）。手動変更相当の最新実値との差分再適用、異なるIDの応答拒否、get読戻し、非Active復元、updateでの復元読戻し、自己通知時の無送信を確認した。
+- 判定の限界：応答の取りこぼしは実測と回帰試験で確定したコード不具合。ただし既に起動していたDLLの内部ログは未取得で、その停止がreadback_timeout由来かは断定しない。修正DLLの再読込み後の実機再試験は未実施。Solo／31 Layer・複数Group／Arena 7.28.1／同Column映像へのTransition適用は未確認。
+- ビルド：`cmake --build build-control-tests --config Release`、`cmake --build build-control-plugins --config Release --target ffgl-plugin-layer-control ffgl-plugin-layer-mask-control`成功。修正DLLは`binaries/x64/Release/LayerControl.dll`と`LayerMaskControl.dll`。Extra Effectsへの置換は未実施。
+- 再試験手順：修正DLLをSETUP.mdに従い導入し、ログ付きでArenaを起動。両PluginについてActive時の指定値適用→Target Layer本体を別値へ変更→ClipまたはColumn再トリガー→指定値の読戻し→非Active化→管理開始前の値の読戻しを確認する。5秒以上経過してから再度手動変更して再適用を確認し、readback_timeoutがないことをログで照合する。映像適用は値の合否と分ける。
+
+## Solo調査の引継ぎ・大規模CompositionでのMask固定報告（2026-10-27）
+
+- 利用者提供の調査テキスト：他Layer（1・3）がSolo、Layer Control配置Layer 4は非Soloでも、Effect ClipはConnected、Effect bypassed=false、一意キーの条件を満たしていたとの報告。これは別調査の観測報告であり、今回のエージェントによる再現ではない。Solo前後の設定変更・読戻し・通知列は未確認。コードはsoloを直接参照せず、同期は描画コールバックから独立している。ただしホストがFFGLインスタンスを維持し、通知を継続することまで保証した結果ではない。
+- 利用者提供の別環境の写真：下部にResolume Arena 7.28.1、Layer 31までの表示、OUTPUT／MAIN MIX／CAM LAYOUT／INPUTのGroup見出しを確認。Mask ModeをOne Below／All Belowへ変更後に他へ切り替わらないとの第三者報告。Layer本体の数値／選択値が固定なのか、映像結果だけなのか、操作対象・実際のDLL版・Composition JSON・ログは未取得。Solo事象との共通原因は未確定。
+- コード確認：Runtimeは送信から5秒経過した未確認pathを次の受信時にFailへ移す。StateReconcilerのfailed集合は接続中保持され、同じpathへの新しい指定値・復元もPlanから除外される。遅れて正しい読戻しが届いてもpendingが消えているため解除されない。タイムアウト判定が受信メッセージの読戻し処理より先なので、5秒後の一致通知そのものでも隔離が先行する。これは停止し得る実装上の経路であり、利用者の発生原因と断定しない。
+- その他の停止経路：同じpathを複数Active Sourceが要求すると同値でも競合として抑止。Instance Keyの不在／重複でも抑止。Group側LayerとトップレベルLayerのJSON全体（動的値を含む）の不一致でinvalid_stateとなり、その通知で復元も抑止され得る。受信1メッセージ16 MiB・受信待機32件／32 MiB・送信待機1 MiB超過や切断は停止し、自動再接続しない。31 Layerという数だけで拒否する条件はない。128はLayer数でなく登録FFGLインスタンス数の上限。
+- 検証：既存の`ctest --test-dir build-control-tests -C Release --output-on-failure`を実行し5/5合格。失敗path隔離・競合・Group不整合拒否を含む既存ロジック試験であり、31 Layer／複数Group環境の再現試験ではない。今回は実装・DLLを変更していない。
+- 次の再現記録：対象環境で使用中DLLのSHA-256、Arena版、再現操作（同一Effect ClipのMask Mode編集／別Clip再生／Target変更）、配置Layer・Target Layer・Group所属、変更前後のLayer本体Mask Modeを記録する。RLC_WS_LOGを設定して起動し、最初に成功した操作から固定までのログと各時点のWebSocket Compositionを取得する。readback_timeout／server_error／invalid_state／failure／disconnected、およびgate・compare・set_sent・restore_sent・readbackを照合する。競合には複数ownerが同一pathを要求していないかも見る。ログは16 MiBで追記停止するため、再現用の新しいログで短時間の記録とする。
+- 設計上の注意：確認前にSolo／Effect BypassゲートやGroup照合を一律撤廃したり、失敗pathへ無条件再送したりしない。失敗した旧要求の自動再送と、新しいユーザー指定を区別する世代管理・最新実値照合・復元の検証が必要。AT-02、Mask映像とGroup境界、7.28.1実機は未検証。
+
 ## ビルド設定と成果物の統一（2026-10-26）
 
 - 対象：LayerControl／LayerMaskControl。ソースは共通のまま、既存vcxprojをMakefileプロジェクトへ変更し、CMakeへBuild／Rebuild／Cleanを委譲。コンパイル設定・依存・JSON生成の二重定義を除去。SDKサンプル・旧Probeは対象外。

@@ -194,7 +194,11 @@ private:
                 }
                 if (IsComposition(message)) { Composition(message); continue; }
                 const auto type = message.value("type", std::string());
-                const auto path = message.value("path", std::string());
+                // Resolume replies to by-id requests with a composition path plus id.
+                // Match the stable parameter id, not that presentation path.
+                const auto path = message.contains("id") && message["id"].is_number_integer() &&
+                    message["id"].get<long long>() > 0
+                    ? ParameterPath(message) : message.value("path", std::string());
                 if (type == "parameter_set") Log({{"event", "server_response"}, {"message", message}});
                 if ((type == "parameter_get" || type == "parameter_update") && message.contains("value") &&
                     reconciler.ReadBack(path, message["value"])) {

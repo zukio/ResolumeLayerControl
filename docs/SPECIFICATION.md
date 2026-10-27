@@ -39,6 +39,10 @@ WebSocket専用の`Layer Control`を旧OSC診断Probeとは別DLLとして追加
 - 未再生・プレビュー専用のClipはLayer設定を変更しない。**Clipが非Activeになった（または無効化・削除された）ら、適用前にTarget Layerが持っていた値（ベースライン）へ戻す。** 同じ項目を別のLayer Control ClipがActiveで管理している間は復元せず、そのClipの値へ切り替えるだけとする。何も管理しなくなった時だけ復元する（0.4版で変更。旧：自動復元しない）。
 - PluginとResolume間の受信・送信はWebSocketに統一する。既存の外部OSC運用には介入せず、プラグインからOSCを送信する互換経路は実装しない。
 
+### 2026-10-27 改訂：読戻しの対応付け
+
+WebSocketのby-id要求に対し、読戻し応答のpathがComposition内のパスになることをArena 7.27.1で確認した。応答のパラメータIDを要求のby-id形式へ正規化し、同じIDかつ値一致のget／updateで未完了要求を完了する。set応答だけでは完了しない。Active中は引き続き最新Compositionの実値との差分を反映し、最後の送信値を現在値として扱わない。既にタイムアウト隔離された要求の自動解除・再送は今回追加しない。実測と修正後の検証範囲はVALIDATION.mdを参照。
+
 ### 2026-10-26 改訂：固定IPv4・Groupと併用条件
 
 ビルド構成の整理：対象2プラグインはCMakeをビルド設定の唯一の管理元とする。既存Visual StudioプロジェクトはCMakeへ委譲する入口として維持する。Windows DLLは`binaries/x64/<構成>/`へ出力する。Windowsは全構成で同梱GLEWに合わせた静的Release CRT（`/MT`）とUTF-8を使用し、Debugは最適化OFF・デバッグ情報ありとする。手順は[SETUP.md](SETUP.md)。Macのビルド・ホスト動作は引き続き未検証。

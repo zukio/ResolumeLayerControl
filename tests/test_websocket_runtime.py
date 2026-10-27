@@ -155,7 +155,11 @@ def main():
                 send(conn, {"type": "parameter_set", "path": "/parameter/by-id/123", "value": 2})
                 send(conn, snapshot)  # acknowledgement alone is not readback
                 quiet(conn)
-                send(conn, {"type": "parameter_get", "path": "/parameter/by-id/123", "value": 2})
+                # A different parameter with the same value must not release our request.
+                send(conn, {"type": "parameter_get", "id": 456, "path": "/composition/layers/2/maskmode", "value": 2})
+                send(conn, snapshot)
+                quiet(conn)
+                send(conn, {"type": "parameter_get", "id": 123, "path": "/composition/layers/1/maskmode", "value": 2})
                 snapshot["layers"][0]["value"] = 2
                 send(conn, snapshot)
                 quiet(conn)
@@ -168,12 +172,16 @@ def main():
                 process.stdin.write("disable\n")
                 process.stdin.flush()
                 assert process.stdout.readline().strip() == "ok"
-                send(conn, {"type": "parameter_get", "path": "/parameter/by-id/123", "value": 2})
+                send(conn, {"type": "parameter_get", "id": 123, "path": "/composition/layers/1/maskmode", "value": 2})
                 send(conn, snapshot)
                 # No active source remains: return to the value seen before the first change.
                 assert receive(conn) == {"action": "set", "parameter": "/parameter/by-id/123", "value": 1}
                 assert receive(conn) == {"action": "get", "parameter": "/parameter/by-id/123"}
                 send(conn, snapshot)  # restore still pending
+                quiet(conn)
+                send(conn, {"type": "parameter_update", "id": 123, "path": "/composition/layers/1/maskmode", "value": 1})
+                snapshot["layers"][0]["value"] = 1
+                send(conn, snapshot)
                 quiet(conn)
                 start = time.monotonic()
                 process.stdin.write("quit\n")
@@ -184,7 +192,7 @@ def main():
             rows = [json.loads(line) for line in log.read_text().splitlines()]
             assert sum(row["event"] == "set_sent" for row in rows) == 2
             assert sum(row["event"] == "restore_sent" for row in rows) == 1
-            assert sum(row["event"] == "readback" for row in rows) == 2
+            assert sum(row["event"] == "readback" for row in rows) == 3
             assert not any(row["event"] == "failure" for row in rows), rows
             expected_host = "127.0.0.1" if host == "0.0.0.0" else host
             assert any(row["event"] == "connected" and row["host"] == expected_host for row in rows), rows
