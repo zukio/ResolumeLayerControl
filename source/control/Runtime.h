@@ -51,10 +51,20 @@ public:
         sources.push_back(source);
     }
     ~Runtime() {
+        const auto started = std::chrono::steady_clock::now();
+        const char* phaseAtStop = phase.load();
         { std::lock_guard<std::mutex> lock(reconnectMutex); stop.store(true); }
         reconnectWake.notify_all();
         socket.Cancel();
+        const auto cancelled = std::chrono::steady_clock::now();
         if (worker.joinable()) worker.join();
+        const auto joined = std::chrono::steady_clock::now();
+        // The worker has exited, so the log stream is no longer shared.
+        try {
+            Log({{"event", "runtime_shutdown"}, {"phase_at_stop", phaseAtStop},
+                {"cancel_us", std::chrono::duration_cast<std::chrono::microseconds>(cancelled - started).count()},
+                {"join_us", std::chrono::duration_cast<std::chrono::microseconds>(joined - cancelled).count()}});
+        } catch (...) {}
     }
 #ifdef RLC_RUNTIME_TESTING
     static std::shared_ptr<Runtime> ForTest(const std::filesystem::path& file) {
@@ -261,10 +271,14 @@ private:
             }
             const auto port = settings.port;
             if (stop.load()) return;
+            phase.store("connect");
             socket.Connect(static_cast<unsigned short>(port), settings.host);
             Log({{"event", "connected"}, {"host", settings.host}, {"port", port}});
             std::string raw;
+            phase.store("receive");
             while (!stop.load() && socket.Receive(raw)) {
+                phase.store("process");
+                struct Receiving { std::atomic<const char*>& p; ~Receiving() { p.store("receive"); } } receiving{phase};
                 try {
                     const auto parseStarted = std::chrono::steady_clock::now();
                     const auto message = ParseStateMessage(raw);
@@ -311,7 +325,12 @@ private:
             } catch (const std::exception& e) {
                 Log({{"event", "failure"}, {"reason", e.what()}});
             }
+            phase.store("socket_shutdown");
+            const auto shutdownStarted = std::chrono::steady_clock::now();
             socket.Shutdown();
+            Log({{"event", "socket_shutdown"}, {"stopping", stop.load()},
+                {"us", std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - shutdownStarted).count()}});
+            phase.store("reconnect_wait");
             // Requests and replies belong to the old connection. Preserve the
             // baseline by parameter ID, but never replay an old outbound queue.
             reconciler.Reset(); deadlines.clear(); retryAfter.clear();
@@ -330,6 +349,7 @@ private:
     std::mutex mutex;
     std::vector<std::weak_ptr<ControlSource>> sources;
     std::atomic<bool> stop{false};
+    std::atomic<const char*> phase{"start"};
     std::mutex reconnectMutex;
     std::condition_variable reconnectWake;
     WebSocket socket;

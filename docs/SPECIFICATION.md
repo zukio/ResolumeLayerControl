@@ -176,7 +176,7 @@ ResolumeのColumnに置いた制御用Effect Clipの設定に従い、指定Laye
 | PRE-03 | WebSocketのComposition購読を同期の契機にし、差分を`set`で書き込む | 通知形式、状態の鮮度、送信後通知、エラー応答 |
 | PRE-04 | 1インスタンスは1つのTarget Layerを制御する | 複数Layer指定は初版の範囲外 |
 | PRE-05 | TransitionとMaskは別プラグインとし、Target Layerを共用しない。Apply項目は持たない | 4.3、4.5 |
-| PRE-06 | 非Active化後に、適用直前の値（ベースライン）へ復元する。ベースラインは最初の変更前の実値で、Runtime内メモリのみ（保存しない）。復元は送信後に破棄し再送しない | 実機でのActive外れ検出、Runtime終了時（最後のインスタンス削除）は復元されない |
+| PRE-06 | 非Active化後に、適用直前の値（ベースライン）へ復元する。ベースラインは最初の変更前の実値で、Runtime内メモリのみ（保存しない）。復元は送信後に破棄し再送しない | 実機でのActive外れ検出。Arena終了時は`~Runtime`が実行されず復元されない（実機）。Compositionの保存前に非Activeへ戻して復元を確認する運用が前提（UNK-14） |
 | PRE-07 | 検証時は制御用Effect Clipの配置Layerを確保する | 既存Clipとの競合、映像影響 |
 | PRE-08 | Active判定の候補はClipの`connected.value` | `Connected`・`Previewing`の状態遷移と再生実態を実測 |
 | PRE-09 | 対象値の読戻しは通知の最新状態またはWebSocketからの取得で行う | 実際の値を古いスナップショットと取り違えない方法 |
@@ -199,6 +199,8 @@ ResolumeのColumnに置いた制御用Effect Clipの設定に従い、指定Laye
 | UNK-10 | 値の読戻しと通知／`set`の競合 | 手動変更が反映された実値で比較でき、送信による通知ループが発生しない |
 | UNK-11 | 旧新Effect Clipの同時Active・通知順序 | 古いClipの指示が後から上書きしない条件を説明できる |
 | UNK-12 | Composition通知の発火条件 | 本番トリガー、Active中編集、Target Layer手動変更、初期ロードで同期契機を取りこぼさない |
+| UNK-13 | A→Bの高速Column切替・通信障害中の元値復元 | 切替の途中でも、管理開始前の値へ戻り、読戻しで確認できる。通信障害からの再接続後も同じIDで復元される |
+| UNK-14 | Composition保存時にプラグイン変更値が保存される問題 | 実機確認済み：Active中に保存すると変更値が保存され、非Activeへの復元完了後または保存せず終了では元の値が保たれる。Arena通常終了では`~Runtime`が実行されず、終了時の自動復元は成立しない（実機）。このため**保存前に復帰用Columnへ切り替え、読戻しで元の値を確認してから保存する運用を前提とする（利用者決定）**。この運用の有効性、Active中の自動保存・終了時保存の内容は未検証 |
 
 ffgl-effectという名称だけから配布元を推定しない。SDK同梱AddSubtractとローカルテンプレートの上流版対応は未確認。
 

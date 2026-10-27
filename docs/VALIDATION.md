@@ -1,5 +1,18 @@
 # 検証記録
 
+## 終了遅延調査・保存時の元値の扱い（2026-10-27）
+
+- 要求：直近のRuntime／WebSocket変更後にResolumeの終了が遅いと感じたため、プラグインの関与を確認する。あわせて、Resolume再起動でベースライン（メモリのみ）が失われた際に、前回の設定を元の値と誤認する可能性を調べる。
+- 実装：`Runtime.h`へ終了計測ログを追加（`runtime_shutdown`：終了時のワーカー段階`phase_at_stop`＝connect／receive／process／socket_shutdown／reconnect_wait、`cancel_us`、`join_us`。`socket_shutdown`：`socket.Shutdown()`の所要時間）。制御仕様・終了処理は変更していない。`RLC_WS_LOG`指定時だけファイルへ出力。
+- 環境：Windows、Arena（インストール先`C:\Program Files\Resolume Arena\Arena.exe`）。ログ付き起動は`tools/start-arena-with-log.ps1`。Release DLLを`Extra Effects`へ導入。Arena製品版の再確認はしていない。
+- 終了遅延の結果：接続前（connect）終了の`join_us`は259〜536 µs、接続済み（receive）終了は786〜4,347 µs。いずれも1回の実機終了での計測値で、体感できる遅延ではない。`Extra Effects`のDLLを削除した状態でも終了が遅く、プラグインのログは出なかった（利用者報告）。したがって終了遅延はプラグイン起因ではない。
+- 補足：ArenaはDLLを未使用のプロジェクトでも、起動時にインスタンスを一時生成するとみられる。生成された共有Runtimeはconnect段階で即座に終了する（LayerControl／LayerMaskControlで各1件。コード・ログからの推定であり、Resolume側の動作は未確認）。
+- 保存と元の値（利用者の実機確認）：①保存せず終了すると、元のLayer設定が残る。②非Activeへの復元完了後に保存すると、元のLayer設定が保存される。③Effect ClipがActiveの間に保存すると、プラグインが変更した値が保存される。したがって、問題の本質はベースライン消失ではなく、一時的な設定変更がCompositionへ保存されることである。ベースラインはRuntime内メモリのみ（PRE-06）。Active中の保存値が次回読込時にLayerの現在値となり、その値と指定値が一致すれば差分がなく、ベースラインは作られない。
+- 運用上の注意：Compositionを保存する前に、Effect Clipを非Activeにして復元を完了させる（復帰用Columnへ切り替え、読戻しで元の値を確認してから保存する）。最後のインスタンス削除時（Runtime破棄）は復元されない。Active中の自動保存・終了時保存の挙動は未検証。
+- 終了時の復元は成立しない（実機結果）：`~Runtime`時に保持中のベースラインへ`set`／`get`を送る試験用実装（環境変数`RLC_SHUTDOWN_PROBE_MS`）を作成し、Arena通常終了（Quit!ダイアログから終了）で試した。Effect ClipをActiveにしLayer値の反映と読戻しを確認した状態で終了したが、`runtime_shutdown`・`probe_*`・`disconnected`は出力されなかった。したがってArenaの通常終了では`~Runtime`が実行されていないか、実行前にプロセスが終了している。終了時にWebserverが応答するかは、プラグインが実行されないため確認できていない。ArenaがFFGLインスタンス・DLLを解放しない詳細な原因は未調査。この結果を受け、プローブ実装は削除した（終了計測ログ`runtime_shutdown`／`socket_shutdown`は残す）。`disconnect-all`などの終了時送信も同じ理由で成立しない。タスクマネージャー終了、メニューExit、保存して終了の各経路は未試験。
+- 決定（利用者）：保存前の運用を仕様の前提とする。Compositionを保存する前に、復帰用ColumnへEffect Clipを非Activeにして切り替え、読戻しで元の値を確認してから保存する。終了時の自動復元は実装しない。
+- 残る確認事項（未実施）：(1)通常のColumn切替で、ベースラインを確実に復元すること。特にA→Bの高速切替と、通信障害時の復元。(2)Composition保存前に、復元の読戻しを確認する運用の有効性。(3)大容量Composition処理中（process）と再接続待機中（reconnect_wait）の終了時間。(4)Active中の自動保存・Arena終了時の保存確認時の保存内容。
+
 ## 通知集約・自動再接続（2026-10-27）
 
 - 要求：30 Layer × 30 Column程度の実用構成を考慮し、通知集中で永久停止しない。利用者が対策1〜5（速度、最新状態集約、再接続、自動復帰、容量検証）を指示。
