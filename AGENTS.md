@@ -12,6 +12,7 @@ ResolumeのWebSocket Composition通知を契機に、ActiveなEffect Clipの設�
 
 ## 守る要求
 
+- 要求にない機能禁止や併用制限を、未検証という理由だけで追加しない。未検証は未検証として報告する。エラーの影響は関係する対象・要求に限定し、新しい正常な操作まで継続して拒否しない。制限が必要なら、具体的な故障例・影響範囲・復帰条件を示す。「誤動作を防ぐ」だけでなく「要求された操作を成立させる」ことまで含めて設計する。
 - 制御用Clipは説明用の仮称であり、正式な機能名はEffect Clipである。
 - Layer ControlはLayer TransitionのBlend ModeとDurationを制御する。Layer Mask ControlはLayer Mask Modeを制御する別プラグインであり、両者のTarget Layerは独立している。
 - Transition Blend ModeとLayer Blend Modeを混同しない。
@@ -114,11 +115,11 @@ LayerControl／LayerMaskControlのビルド設定はCMakeへ集約する。既�
 
 検証資料は以下のパスを使用する。実ファイルの有無と内容はリポジトリで確認する。
 
-| パス案 | 内容 |
-| --- | --- |
-| docs/VALIDATION.md | 対象環境、試験手順、期待結果、実結果、制限 |
+| パス案               | 内容                                                        |
+| -------------------- | ----------------------------------------------------------- |
+| docs/VALIDATION.md   | 対象環境、試験手順、期待結果、実結果、制限                  |
 | docs/PROTOCOL_MAP.md | 実測済みのWebSocketパス・Clip状態・ID対応・型・単位・列挙値 |
-| docs/SETUP.md | 確認済みのビルド、導入、接続、復旧手順 |
+| docs/SETUP.md        | 確認済みのビルド、導入、接続、復旧手順                      |
 
 ビルド手順は実際の構成を読んでから確定する。実行していないコマンドや存在しないターゲットを「確認済み」として書かない。
 
