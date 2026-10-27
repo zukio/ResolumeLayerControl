@@ -2,6 +2,14 @@
 
 2026-10-23。実装済みの検証用構成。ホスト受入完了を意味しない。
 
+## 2026-10-27 通知集約・自動再接続への改訂
+
+以下の過去記述よりSPECIFICATION.mdの「通知集中と通信復帰」を優先する。WebSocketはI/Oスレッドで受信し、完全なCompositionだけを最新1件へ集約する。応答・エラーは別枠で保持。Runtimeの評価ワーカーは新たなCompositionを受けた時だけ同期し、CompositionIndexを一度作って各Sourceへ渡す。GroupのLayer複写とactive_clipはJSON展開時に省く。
+
+WebSocket++の同梱版ではget_buffered_amountにロックがないため、送信もI/Oスレッドへpostし、原子的な待機バイト数で1 MiBを管理する。Receiveは条件変数で待機し、Cancelで解除する。接続変更・終了時にI/Oスレッドを停止・joinして旧ソケットを閉じる。
+
+Runtimeは接続失敗・切断・受信上限超過後にバックオフして再接続。旧pending／期限／エラー待機を破棄し、ベースラインと所有者情報は保持する。新しい完全なCompositionなしでは送信しない。新接続の旧IDが存在しなければ他IDへ復元しない。上限は1024 Source、最新Composition 64 MiB、その他待機32件／32 MiB、未完了384件。合成負荷での検証範囲と実機未検証事項はVALIDATION.mdを参照。
+
 ## 共通部分と固有部分
 
 | 場所 | 責務 | 別プラグインへの流用 |

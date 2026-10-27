@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <chrono>
 
 using namespace control;
 static Json definition = definitions::LayerControl();
@@ -25,6 +26,45 @@ static std::vector<Intent> Evaluate(const Json& c, const Settings& s) {
 }
 int main(int argc, char** argv) {
     try {
+        {
+            auto large = Fixture(); large["layers"] = Json::array();
+            for (int l = 0; l < 30; ++l) {
+                auto layer = Fixture()["layers"][0]; layer["id"] = 1000 + l;
+                layer["clips"] = Json::array();
+                for (int col = 0; col < 30; ++col) {
+                    auto clip = Fixture()["layers"][0]["clips"][0];
+                    clip["id"] = 10000 + l * 30 + col;
+                    clip["connected"]["value"] = col == 0 ? "Connected" : "Disconnected";
+                    clip["video"]["effects"][0]["params"]["Instance Key"]["value"] = std::to_string(l * 30 + col);
+                    layer["clips"].push_back(clip);
+                }
+                large["layers"].push_back(layer);
+            }
+            large["layergroups"] = Json::array({{{"layers", large["layers"]}}});
+            auto compact = ParseStateMessage(large.dump());
+            Check(!compact["layergroups"][0].contains("layers"), "group duplicate DOM skipped");
+            Check(compact["layers"] == large["layers"], "canonical layers unchanged by parsing");
+            const auto start = std::chrono::steady_clock::now();
+            CompositionIndex index(large);
+            unsigned activeCount = 0;
+            for (int i = 0; i < 900; ++i) {
+                auto values = Defaults(definitions::LayerControl()); values[TargetLayer] = static_cast<float>(i / 30 + 1);
+                std::string status; std::set<std::string> held; Json errors;
+                auto intents = BuildIntents(definitions::LayerControl(), large, std::to_string(i), values, status, &held, &errors, &index);
+                Check(index.Resolve(std::to_string(i)).clip != nullptr, "900 unique clips resolve with group aliases");
+                if (!intents.empty()) ++activeCount;
+            }
+            Check(activeCount == 30, "30x30 evaluates exactly the 30 active clips");
+            const auto indexed = std::chrono::steady_clock::now();
+            for (int i = 0; i < 900; ++i)
+                Check(ResolveClip(large, std::to_string(i)).clip == index.Resolve(std::to_string(i)).clip, "indexed and reference resolution agree");
+            std::cout << "30x30 / 900 sources: indexed evaluation us=" << std::chrono::duration_cast<std::chrono::microseconds>(indexed-start).count()
+                      << ", previous resolver only us=" << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-indexed).count() << '\n';
+            large["layers"][1]["clips"][1]["video"]["effects"][0]["params"]["Instance Key"]["value"] = "0";
+            Check(!CompositionIndex(large).Resolve("0").clip, "indexed duplicate nonactive key rejected");
+            large["video"] = large["layers"][0]["clips"][2]["video"];
+            Check(!CompositionIndex(large).Resolve("2").clip, "indexed composition effect counted");
+        }
         auto c = Fixture(); auto s = Defaults(definition); StateReconciler r;
         Check(!Evaluate(c, s).empty(), "default enabled");
         s[Enabled] = 0;

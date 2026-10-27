@@ -43,20 +43,21 @@ inline const Json& Property(const Json& root, const std::string& property) {
 }
 inline std::vector<Intent> BuildIntents(const Json& d, const Json& composition, const std::string& key,
                                       const Settings& settings, std::string& status,
-                                      std::set<std::string>* held = nullptr, Json* errors = nullptr) {
+                                      std::set<std::string>* held = nullptr, Json* errors = nullptr,
+                                      const CompositionIndex* index = nullptr) {
     const auto& params = d.at("parameters");
     if (settings.size() != params.size()) throw std::runtime_error("settings size mismatch");
     for (unsigned i = 0; i < settings.size(); ++i)
         if (params[i]["type"] != "text" && params[i].value("role", "") != "reserved" && !Valid(d,i,settings[i]))
             throw std::runtime_error("invalid setting");
     if (!settings[RoleIndex(d,"enabled")]) { status = "disabled"; return {}; }
-    auto resolved = ResolveClip(composition,key);
+    auto resolved = index ? index->Resolve(key) : ResolveClip(composition,key);
     if (!resolved.clip) { status = "unresolved_or_duplicate_key"; return {}; }
     if (!IsActive(*resolved.clip)) { status = "inactive"; return {}; }
     if (!resolved.effect->contains("bypassed") || resolved.effect->at("bypassed").value("value",true)) { status = "bypassed_or_unknown"; return {}; }
-    const auto index = static_cast<std::size_t>(settings[RoleIndex(d,"target")] - 1);
-    if (index >= composition.at("layers").size()) throw std::runtime_error("target layer missing");
-    const auto& layer = composition["layers"][index];
+    const auto layerIndex = static_cast<std::size_t>(settings[RoleIndex(d,"target")] - 1);
+    if (layerIndex >= composition.at("layers").size()) throw std::runtime_error("target layer missing");
+    const auto& layer = composition["layers"][layerIndex];
     std::vector<Intent> intents;
     for (const auto& p : params) {
         if (!p.contains("property")) continue;

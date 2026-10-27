@@ -1,5 +1,37 @@
 # 検証記録
 
+## 通知集約・自動再接続（2026-10-27）
+
+- 要求：30 Layer × 30 Column程度の実用構成を考慮し、通知集中で永久停止しない。利用者が対策1〜5（速度、最新状態集約、再接続、自動復帰、容量検証）を指示。
+- 実装：I/Oスレッドで受信を継続し、待機中の完全なCompositionは最新1件へ集約。読戻し・エラー等の順序は維持。JSON展開時にGroupのlayers／Layerのactive_clip複写を省き、Clip対応を1通知1索引へ変更。gate／compareは変化時だけログ出力。Runtime ID、解析／評価時間、受信・集約数・ピーク待機量を記録。
+- 復帰：接続失敗・切断・受信待機超過後は250 ms〜最大5秒のバックオフで再接続し、設定を再読取り。旧pending／期限／待機を破棄し、新Compositionまではsetしない。ベースラインは保持し、正規Layerの同じIDを確認できる時だけ復元。終了は条件変数を解除し、I/Oと評価の両スレッドをjoinする。
+- 容量：128 Sourceでは900配置を受けられないため1024へ変更。登録1024件、1025件目の拒否、解放後の再登録を模擬試験。通信は最新Composition最大64 MiB、その他待機32件／32 MiB、送信待機1 MiB。未完了384件は維持。送信受付は実送信／読戻しの成功とは区別する。
+- 30×30索引試験：900個の一意キー・30 Active・Group複写を合成。全Clip解決とActive評価、重複キー拒否を確認。代表測定で新索引＋900 Source評価4,327 µs、従来の900回ResolveClipのみ598,323 µs。この速度比較は小さな合成Fixtureであり、実機の総処理時間ではない。
+- 通信負荷：保存済みArena 7.27.1のClipメタデータを複製し30×30＋Group複写を作成。1通知24,429,485 bytes（約23.3 MiB）。旧16 MiB制限では入らないため64 MiBへ変更した根拠とした。4通知（末尾の新指定を含む）送信から最新指定のset/get受信まで代表4.625秒、模擬RuntimeプロセスのピークWorking Set 174.5 MiB。代表最終通知のJSON解析797,364 µs、評価94,040 µs。JSON解析はなお重く、映像Transitionへ間に合う結果とは扱わない。テストは実キャプチャの構造を利用した合成であり、実機900 Clipを再生したものではない。
+- 回帰試験：`websocket_recovery`に起動時503拒否から復帰、切断時pending破棄、新しい指定の反映、接続をまたぐ元値への復元、受信待機超過から再接続、評価停止中の150件の古い非Active通知の集約、応答／エラー保持、大容量通知後の新しい指定への反映を追加。既存`tests/test_websocket_runtime.py`（CTest経由）の読戻し・自己通知収束・項目別復帰・ログ失敗試験も継続。
+- 再生位置通知対策：エラーのない`parameter_update`の`/transport/position`を受信段階で除外。評価停止中に500件を集中させても応答待機を圧迫せず、最新状態を処理できることを回帰試験へ追加した。エラー付き通知は除外しない。
+- ビルド／試験：Windows、VS2022 MSBuild 17.14.40、SDK 10.0.28000.0。`cmake --build build-control-tests --config Release`、`ctest --test-dir build-control-tests -C Release -V`、両プラグインReleaseビルドを実施。最新の最終確認ログは`evidence/recovery-tests-20261027.txt`へ保存する。通常サンドボックスではSDK参照が拒否されるためビルドのみ昇格実行。
+- 未実施：新DLLをArenaへ導入した試験、実機30×30・両DLL同時負荷・長時間運用、切断前後の映像とMaskの露出、AT-02、Mac。稼働中Arenaの再起動・DLL置換・Composition変更は今回行っていない。試験用サーバーのget/set成功を実機成功としない。
+- 実機再現手順：保存・終了後にbinaries/x64/Releaseの両DLLを導入してログ付き起動。両PluginのActive適用→Layer本体を手動変更→次通知で再適用→非Activeで元値へ復元を確認。試験用CompositionでWebserverを一時無効／再有効化し、reconnect_wait→connected→新通知→差分set→readbackを確認。30×30では実通知bytes、parse_us、evaluation_us、peak_bytes、replaced、メモリを記録し、映像適用は別判定。恒常的に64 MiB超過する通知や負荷による長い遅延は未解決となり得るため、ログを根拠に追加評価する。
+
+## ログ付き再起動後、Maskのみ停止（2026-10-27）
+
+- 利用者報告：再起動前は両方が動かず、Layer本体の手動変更が契機の可能性。ログ付き再起動後はControlが動作しMaskのみ不良。今回の取得は読取りのみで、再生・値変更は利用者操作。
+- Arena PID 45392、20:29:56起動。保存設定の製品情報はArena 7.27.1 rev15990。ログ`logs/control-20261027-202956-420.jsonl`の調査時点のコピーを`evidence/control-mask-stall-20261027.jsonl`へ保存。
+- 20:30:05.286 JSTに`WebSocket connection failed or cancelled`、20:30:08.637に`WebSocket receive queue limit`を記録。Maskのgateは20:30:08.311のdisabledが最後で、その後はLayer Controlのgate／set_sent／restore_sent／readbackが継続。Controlの値適用と復元の読戻しは記録あり。映像への反映は未判定。
+- 現在のMaskはLayer 1／Column 8、Connected、Enabled=true、Effect Bypass=false、Target=1、One Below。対象Layer 1のmaskmodeはDisabled。現在のInstance Keyはeb4ac378-f295-46a7-8c17-8ca1206ad5f7で、起動時ログにあるMask ownerとは異なる。現在キーのgate記録は取得ログにない。
+- 現行WebSocket.cppは受信待機32件または32 MiB超過でfailureを設定して終了し、Runtimeは再接続しない。ログ上、この停止経路の発生を確認。Mask停止との関連は、その後のMaskログ消失とControl継続から強く疑われるが、failure行にはDLL／Runtime識別子がなく直接の帰属は未確定。件数・バイト数どちらの超過か、通知の内容・集中原因も現行ログでは特定できない。手動変更が直接の原因とはまだ断定しない。
+- 次の実装修正候補：failureにRuntime識別と受信件数・バイト数・メッセージ種別を残し、通知集中時の処理と停止後の復帰を検証する。無条件の上限拡大や通知破棄を修正済み扱いにしない。本調査では製品コード・DLLを変更していない。
+
+## 使用中の停止調査（2026-10-27、19:05起動セッション）
+
+- 読取りのみ実施。Arena PID 45252、起動時刻19:05:24。Composition Example、4 Layer／10 Column／1 Group。再生・設定変更・保存・再起動は行っていない。
+- Layer 3／Column 5のLayer Controlが再生中、Enabled=true、Target Layer=1、Transition Blend=Cube、Duration=0。一方、Target Layer 1はAlpha／1秒。不一致を観測したが、通知前後の時系列とEffect Bypassの実値は未取得で、原因は未確定。Layer 1／Column 8のLayer Mask ControlはEnabled=false。
+- Arenaがロードした両DLLのパスを確認。配置ファイルとbinaries/x64/ReleaseのSHA-256は一致。LayerControl: E477ED04001E57CAFEA081AEB43FE69EE53E44966D8006F3ADD5B3FD0141D6CF、LayerMaskControl: 4DFFC1DF660CE1909AA84505B5A9B21BA2AD83D23E51FA1B18916A144CB53B26。メモリ上のバイナリハッシュは未取得。
+- User／Machineおよび調査シェルのRLC_WS_LOGは未設定。起動済みArena固有の環境変数は未確認。docs/evidenceで確認できたプラグインログは10月23日のみで、今回の停止に対応する内部ログは取得できていない。
+- 現行Runtimeは切断／接続失敗後に自動再接続しない。停止原因の候補であり、今回これが発生した証拠はない。
+- 再現用にtools/start-arena-with-log.ps1を追加。利用者が保存・終了した後に実行すると、logs/control-日時.jsonlを指定してArenaを起動する。稼働中は起動を拒否する。スクリプト構文のみ確認、実起動は未実施。成功した操作から停止までを短時間記録し、failure／disconnected／gate／compare／readbackを照合する。ファイルログはRuntimeごとに16 MiBで追記停止するため、無期限記録には使わない。映像適用・AT試験は未実施。
+
 ## 制御を止める照合・制限の棚卸し（2026-10-27）
 
 利用者依頼により共通コード・定義・既存テスト・履歴を静的調査した。[棚卸し詳細](VALIDATION_GATES_AUDIT.md)に優先見直し9項目、互換範囲・容量等の追加条件、維持すべき確認、復元上の注意を記録。Groupの全内容一致、Source単位エラーの全復元への波及、失敗pathの継続隔離、読戻しより先の期限判定、任意ログ失敗による停止を優先候補とした。設計案であり、今回はソース・DLL・実機を変更していない。実機原因の確定や修正後の合格を意味しない。

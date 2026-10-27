@@ -10,11 +10,15 @@ public:
         SetKey(NewInstanceKey());
     }
     Evaluation Evaluate(const Json& c) override {
+        const CompositionIndex index(c);
+        return EvaluateIndexed(c, index);
+    }
+    Evaluation EvaluateIndexed(const Json& c, const CompositionIndex& index) override {
         std::lock_guard<std::mutex> lock(mutex);
         Evaluation r; r.revision = revision.load();
         if (!alive) { r.status = "destroyed"; return r; }
         const auto key = Key();
-        r.intents = BuildIntents(definition,c,key,settings,r.status,&r.heldProperties,&r.evidence);
+        r.intents = BuildIntents(definition,c,key,settings,r.status,&r.heldProperties,&r.evidence,&index);
         r.evidence["plugin"] = definition.at("name");
         r.evidence["target_layer"] = settings[RoleIndex(definition,"target")];
         return r;

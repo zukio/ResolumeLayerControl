@@ -51,7 +51,7 @@ def run_case(executable, case):
                         conn.sendall(b"\x82\x01x")
                         assert lines.get(timeout=5) == "failed"
                     elif case == "oversize":
-                        conn.sendall(b"\x81\x7f" + struct.pack("!Q", 16 * 1024 * 1024 + 1))
+                        conn.sendall(b"\x81\x7f" + struct.pack("!Q", 64 * 1024 * 1024 + 1))
                         # The library sends a close frame without allocating the announced payload.
                         close = conn.recv(128)
                         assert close[0] == 0x88

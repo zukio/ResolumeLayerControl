@@ -3,6 +3,17 @@
 #include <stdexcept>
 
 namespace control {
+inline Json ParseStateMessage(const std::string& raw) {
+    bool groups = false;
+    return Json::parse(raw, [&](int depth, Json::parse_event_t event, Json& value) {
+        if (event != Json::parse_event_t::key) return true;
+        if (depth == 1) groups = value == "layergroups";
+        // These are duplicate views, not placements. Keep Group-level effects.
+        if (groups && depth == 3 && value == "layers") return false;
+        if (!groups && depth == 3 && value == "active_clip") return false;
+        return true;
+    });
+}
 inline bool IsComposition(const Json& message) {
     return message.is_object() && message.contains("layers") && message["layers"].is_array();
 }
@@ -33,6 +44,53 @@ inline unsigned TokenOccurrences(const Json& node, const std::string& key) {
     return count;
 }
 struct ResolvedClip { const Json* clip = nullptr; const Json* effect = nullptr; };
+// Built once per snapshot, shared by every Source evaluation. References never
+// outlive the immutable snapshot. Count non-Clip placements as well.
+class CompositionIndex {
+public:
+    explicit CompositionIndex(const Json& composition) {
+        for (const auto& child : composition.items()) {
+            if (child.key() != "layergroups") Count(child.value());
+            else if (child.value().is_array()) for (const auto& group : child.value())
+                if (group.is_object()) for (const auto& field : group.items())
+                    if (field.key() != "layers") Count(field.value());
+        }
+        if (!IsComposition(composition)) return;
+        for (const auto& layer : composition["layers"]) {
+            if (!layer.contains("clips") || !layer["clips"].is_array()) continue;
+            for (const auto& clip : layer["clips"]) {
+                if (!clip.contains("id") || !clip["id"].is_number_integer() ||
+                    !clip.contains("video") || !clip["video"].is_object()) continue;
+                const auto& video = clip["video"];
+                if (!video.contains("effects") || !video["effects"].is_array()) continue;
+                for (const auto& effect : video["effects"]) {
+                    if (!effect.contains("params") || !effect["params"].is_object()) continue;
+                    const auto& params = effect["params"];
+                    if (!params.contains("Instance Key")) continue;
+                    const auto& token = params["Instance Key"];
+                    if (token.is_object() && token.contains("value") && token["value"].is_string())
+                        clips[token["value"].get<std::string>()] = {&clip, &effect};
+                }
+            }
+        }
+    }
+    ResolvedClip Resolve(const std::string& key) const {
+        const auto count = counts.find(key); const auto clip = clips.find(key);
+        return !key.empty() && count != counts.end() && count->second == 1 && clip != clips.end()
+            ? clip->second : ResolvedClip{};
+    }
+private:
+    void Count(const Json& node) {
+        if (node.is_object()) {
+            const auto token = node.find("Instance Key");
+            if (token != node.end() && token->is_object() && token->contains("value") && (*token)["value"].is_string())
+                ++counts[(*token)["value"].get<std::string>()];
+            for (const auto& child : node.items()) if (child.key() != "active_clip") Count(child.value());
+        } else if (node.is_array()) for (const auto& child : node) Count(child);
+    }
+    std::map<std::string, unsigned> counts;
+    std::map<std::string, ResolvedClip> clips;
+};
 // Arena 7.27.1 includes every Layer in composition.layers, including group
 // members. layergroups[].layers repeats those same objects, not placements.
 inline unsigned CanonicalTokenOccurrences(const Json& composition, const std::string& key) {

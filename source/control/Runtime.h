@@ -11,6 +11,7 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
+#include <condition_variable>
 
 namespace control {
 struct Evaluation {
@@ -23,6 +24,7 @@ struct Evaluation {
 struct ControlSource {
     virtual ~ControlSource() = default;
     virtual Evaluation Evaluate(const Json&) = 0;
+    virtual Evaluation EvaluateIndexed(const Json& state, const CompositionIndex&) { return Evaluate(state); }
     virtual std::uint64_t Revision() const = 0;
     std::string Key() const { std::lock_guard<std::mutex> lock(keyMutex); return key; }
     void SetKey(const std::string& value) { std::lock_guard<std::mutex> lock(keyMutex); key = value; }
@@ -33,6 +35,7 @@ protected:
 // Shared per DLL, not per FFGL instance. No host/GL callbacks on the worker.
 class Runtime {
 public:
+    static constexpr std::size_t SourceCapacity = 1024;
     static std::shared_ptr<Runtime> Acquire() {
         static std::mutex creationMutex;
         static std::weak_ptr<Runtime> existing;
@@ -44,11 +47,12 @@ public:
     void Add(const std::shared_ptr<ControlSource>& source) {
         std::lock_guard<std::mutex> lock(mutex);
         sources.erase(std::remove_if(sources.begin(), sources.end(), [](const auto& p) { return p.expired(); }), sources.end());
-        if (sources.size() >= 128) throw std::runtime_error("128 instance limit");
+        if (sources.size() >= SourceCapacity) throw std::runtime_error("1024 instance limit");
         sources.push_back(source);
     }
     ~Runtime() {
-        stop.store(true);
+        { std::lock_guard<std::mutex> lock(reconnectMutex); stop.store(true); }
+        reconnectWake.notify_all();
         socket.Cancel();
         if (worker.joinable()) worker.join();
     }
@@ -71,6 +75,7 @@ private:
     Runtime() : worker([this] { Run(); }) {}
     void Log(const Json& entry) {
         Json row = entry;
+        row["runtime"] = runtimeId;
         row["wall_ms"] = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         const auto text = row.dump();
@@ -108,19 +113,22 @@ private:
         std::vector<Intent> all;
         std::map<std::string, std::pair<std::shared_ptr<ControlSource>, std::uint64_t>> revisions;
         std::set<std::string> active, liveOwners;
+        const CompositionIndex index(composition);
         for (auto& source : Sources()) {
             const auto owner = source->Key();
             liveOwners.insert(owner);
             auto& previous = ownerPaths[owner];
             try {
-                auto evaluation = source->Evaluate(composition);
-                Log({{"event", "gate"}, {"owner", owner}, {"status", evaluation.status}, {"evidence", evaluation.evidence}});
+                auto evaluation = source->EvaluateIndexed(composition, index);
+                const Json gate = {{"event", "gate"}, {"owner", owner}, {"status", evaluation.status}, {"evidence", evaluation.evidence}};
+                if (!lastGates.count(owner) || lastGates[owner] != gate) { Log(gate); lastGates[owner] = gate; }
                 if (source->Revision() != evaluation.revision || evaluation.status == "unresolved_or_duplicate_key") {
                     for (const auto& old : previous) active.insert(old.first);
                     continue;
                 }
                 revisions[owner] = {source, evaluation.revision};
                 std::map<std::string, std::string> next;
+                Json comparisons = Json::array();
                 for (const auto& old : previous)
                     if (evaluation.heldProperties.count(old.second)) {
                         next.insert(old); active.insert(old.first);
@@ -130,7 +138,11 @@ private:
                     next[intent.path] = intent.property;
                     active.insert(intent.path);
                     all.push_back(intent);
-                    Log({{"event", "compare"}, {"owner", owner}, {"path", intent.path}, {"actual", intent.actual}, {"desired", intent.desired}});
+                    comparisons.push_back({{"event", "compare"}, {"owner", owner}, {"path", intent.path}, {"actual", intent.actual}, {"desired", intent.desired}});
+                }
+                if (!lastComparisons.count(owner) || lastComparisons[owner] != comparisons) {
+                    for (const auto& row : comparisons) Log(row);
+                    lastComparisons[owner] = std::move(comparisons);
                 }
                 previous = std::move(next);
             } catch (const std::exception& e) {
@@ -141,6 +153,9 @@ private:
         }
         for (auto it = ownerPaths.begin(); it != ownerPaths.end();)
             if (!liveOwners.count(it->first)) it = ownerPaths.erase(it); else ++it;
+        for (auto* cache : {&lastGates, &lastComparisons})
+            for (auto it = cache->begin(); it != cache->end();)
+                if (!liveOwners.count(it->first)) it = cache->erase(it); else ++it;
         std::vector<Intent> restores;
         for (auto it = baselines.begin(); it != baselines.end();) {
             if (active.count(it->first)) { ++it; continue; }
@@ -234,10 +249,16 @@ private:
                 if (!log) { log.clear(); DebugLog("LayerControl: cannot open RLC_WS_LOG; continuing without file log\n"); }
             }
             } catch (const std::exception&) { DebugLog("LayerControl: invalid log path; continuing without file log\n"); }
+            unsigned retryDelay = 250;
+            while (!stop.load()) {
+            try {
             auto file = HostSettingsFile();
             Log({{"event", "server_settings"}, {"path", file.u8string()}});
             const auto settings = ReadServerSettings(file);
-            if (!settings.enabled) { Log({{"event", "disabled"}, {"reason", "Resolume Webserver disabled"}}); return; }
+            if (!settings.enabled) {
+                Log({{"event", "disabled"}, {"reason", "Resolume Webserver disabled"}});
+                throw std::runtime_error("Resolume Webserver disabled; retrying settings");
+            }
             const auto port = settings.port;
             if (stop.load()) return;
             socket.Connect(static_cast<unsigned short>(port), settings.host);
@@ -245,9 +266,23 @@ private:
             std::string raw;
             while (!stop.load() && socket.Receive(raw)) {
                 try {
-                    const auto message = Json::parse(raw);
+                    const auto parseStarted = std::chrono::steady_clock::now();
+                    const auto message = ParseStateMessage(raw);
                     if (!message.is_object()) continue;
-                    if (IsComposition(message)) { Composition(message); continue; }
+                    if (IsComposition(message)) {
+                        retryDelay = 250;
+                        const auto started = std::chrono::steady_clock::now();
+                        Composition(message);
+                        const auto stats = socket.Stats();
+                        Log({{"event", "composition_processed"}, {"bytes", raw.size()},
+                            {"parse_us", std::chrono::duration_cast<std::chrono::microseconds>(started - parseStarted).count()},
+                            {"evaluation_us", std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count()},
+                            {"received", stats.received}, {"replaced", stats.compositionsReplaced},
+                            {"positions_ignored", stats.positionsIgnored},
+                            {"peak_messages", stats.peakMessages}, {"peak_bytes", stats.peakBytes},
+                            {"largest_message", stats.largestMessage}});
+                        continue;
+                    }
                     const auto type = message.value("type", std::string());
                     // Resolume replies to by-id requests with a composition path plus id.
                     // Match the stable parameter id, not that presentation path.
@@ -273,6 +308,20 @@ private:
                 }
             }
             Log({{"event", "disconnected"}, {"pending", reconciler.PendingCount()}});
+            } catch (const std::exception& e) {
+                Log({{"event", "failure"}, {"reason", e.what()}});
+            }
+            socket.Shutdown();
+            // Requests and replies belong to the old connection. Preserve the
+            // baseline by parameter ID, but never replay an old outbound queue.
+            reconciler.Reset(); deadlines.clear(); retryAfter.clear();
+            lastGates.clear(); lastComparisons.clear();
+            if (stop.load()) break;
+            Log({{"event", "reconnect_wait"}, {"delay_ms", retryDelay}});
+            std::unique_lock<std::mutex> lock(reconnectMutex);
+            reconnectWake.wait_for(lock, std::chrono::milliseconds(retryDelay), [&] { return stop.load(); });
+            retryDelay = std::min(5000u, retryDelay * 2);
+            }
         } catch (const std::exception& e) {
             try { Log({{"event", "failure"}, {"reason", e.what()}}); } catch (...) {}
         } catch (...) {}
@@ -281,17 +330,21 @@ private:
     std::mutex mutex;
     std::vector<std::weak_ptr<ControlSource>> sources;
     std::atomic<bool> stop{false};
+    std::mutex reconnectMutex;
+    std::condition_variable reconnectWake;
     WebSocket socket;
     StateReconciler reconciler;
     struct Baseline { Json value; double tolerance = 0; };
     std::map<std::string, Baseline> baselines;
     std::map<std::string, std::map<std::string, std::string>> ownerPaths;
+    std::map<std::string, Json> lastGates, lastComparisons;
     struct Retry { Json desired; std::string owner; std::uint64_t revision; std::chrono::steady_clock::time_point until; };
     std::map<std::string, Retry> retryAfter;
     std::uint64_t generation = 0;
     std::map<std::string, std::chrono::steady_clock::time_point> deadlines;
     std::ofstream log;
     std::size_t logBytes = 0;
+    const std::string runtimeId = NewInstanceKey();
     std::thread worker;
 };
 }

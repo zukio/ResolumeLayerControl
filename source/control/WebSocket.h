@@ -1,6 +1,8 @@
 #pragma once
 #include <memory>
 #include <string>
+#include <mutex>
+#include <cstdint>
 namespace control {
 class WebSocket {
 public:
@@ -11,8 +13,15 @@ public:
     bool Send(const std::string& message);
     void Cancel() noexcept;
     void Shutdown() noexcept;
+    struct Statistics {
+        std::uint64_t received = 0, compositionsReplaced = 0, positionsIgnored = 0;
+        std::size_t peakMessages = 0, peakBytes = 0, largestMessage = 0;
+    };
+    Statistics Stats() const;
 private:
     struct Impl;
-    std::unique_ptr<Impl> impl;
+    std::shared_ptr<Impl> impl;
+    mutable std::mutex lifetime;
+    bool cancelled = false;
 };
 }
