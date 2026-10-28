@@ -20,7 +20,7 @@ jobs:
           "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
 
       - name: Build plugins
-        run: cmake --build build-control-plugins --target ffgl-plugin-layer-control ffgl-plugin-layer-mask-control
+        run: cmake --build build-control-plugins --target ffgl-plugin-layer-control ffgl-plugin-layer-mask-control ffgl-plugin-api-sender
 
       - name: Build and run tests
         run: |

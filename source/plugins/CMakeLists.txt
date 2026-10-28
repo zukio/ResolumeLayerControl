@@ -11,3 +11,5 @@ if(FFGL_BUILD_LEGACY_PROBE)
 endif()
 add_subdirectory(LayerControl)
 add_subdirectory(LayerMaskControl)
+
+add_subdirectory(APISender)

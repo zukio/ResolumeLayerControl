@@ -10,6 +10,10 @@ WebSocket++の同梱版ではget_buffered_amountにロックがないため、�
 
 Runtimeは接続失敗・切断・受信上限超過後にバックオフして再接続。旧pending／期限／エラー待機を破棄し、ベースラインと所有者情報は保持する。新しい完全なCompositionなしでは送信しない。新接続の旧IDが存在しなければ他IDへ復元しない。上限は1024 Source、最新Composition 64 MiB、その他待機32件／32 MiB、未完了384件。合成負荷での検証範囲と実機未検証事項はVALIDATION.mdを参照。
 
+## APISender（2026-10-28）
+
+新しい要求による任意JSON送信は`APISenderSource.h`と専用FFGLアダプターで扱う。`Evaluation.commandActive`と`commands`をRuntimeへ渡し、Runtimeが所有者別の前回状態を保持して切替時だけキュー投入する。再接続時はこの観測状態を破棄する。Intent／StateReconciler／ベースラインを経由しないため、任意APIへ実値同期や自動復元を適用しない。後述の任意JSON禁止・property定義方式は既存Layer系の方針であり、APISenderには適用しない。詳細は[APISender](APISender.md)。
+
 ## 共通部分と固有部分
 
 | 場所 | 責務 | 別プラグインへの流用 |

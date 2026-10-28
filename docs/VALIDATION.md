@@ -1,5 +1,25 @@
 # 検証記録
 
+## APISender実装・Cloud検証（2026-10-28）
+
+- GitHub連携でmasterとDevが同じ`88fa376df23590eb210a8205a486dc03796f82eb`であることを確認し、同コミットからローカルDevへ切替。既存Layer系と独立したAPISender（FFGL ID RAPI）を追加。仕様と実機再現は[APISender.md](APISender.md)。
+- 環境：Linux Cloud、g++ C++17、Python 3。Windows／Mac用Platformをテスト専用アダプターに置き換え、製品と同じWebSocket.cpp／TinyXML-2／RuntimeをローカルRFC6455サーバーに接続。Linuxの製品対応を追加したものではない。サンドボックスではsocket生成が拒否されたため、通信テストは許可された昇格実行でループバックを使用した。
+- APISender専用試験：`python3 tests/test_api_sender.py work/bin/api_sender_smoke`成功。起動時Active／非Active、配列順序、同じ通知・再トリガー相当で無再送、Preview、Bypass、Enabled、キー不在・重複保留、編集中は再送しないこと、空コマンド、サーバーエラー後に再送しないこと、再接続後のComposition待機とActive送信を確認。模擬triggerは任意JSONの転送を試すもので、そのAPI actionのResolume実機対応を検証したものではない。
+- 入力試験：不正JSON、非オブジェクト、action不正を拒否し旧設定を保持。64 KiBテキスト上限、256コマンド上限、空白・空配列を確認。
+- 回帰試験：control_tests 1,860項目成功、test_definitions.py 5件成功、server_settings_testsは失敗0。test_websocket_transport.py／test_websocket_runtime.py／test_websocket_recovery.py成功。既存の差分set・読戻し・自己通知・復元・ログ失敗・再接続・通知集約・大容量通知・位置通知抑止を確認。
+- FFGLアダプターは同梱SDK／GLEWヘッダーを用いたg++の構文チェックに成功。追加の`-Wall -Wextra -Werror`では既存RuntimeのIntent集約初期化とSDKの未使用引数の警告がエラーとなった。標準の構文チェックは成功しており、この警告のために既存SDKは変更していない。
+- Windowsソリューション・vcxproj（XML解析成功）、CMakeターゲット、Visual Studio委譲先許可リスト、macOS CIの対象を追加。この環境にcmakeがないためCMake／CTestの実行は未実施。g++で各実行ファイルを直接ビルドし、上記テストを実行した。Windows DLL／Mac bundle生成、Arenaロード、FFGLテキスト編集・保存／再読込・Preset・複製、映像パススルー、API実反映は未実施。
+
+直接ビルドの再現（リポジトリルート、Linuxテスト専用）：
+
+```sh
+mkdir -p work/bin
+g++ -std=c++17 -O1 -pthread -DASIO_STANDALONE -D_WEBSOCKETPP_CPP11_STL_ -Ideps -Ideps/tinyxml2 -Ideps/asio/asio/include -Ideps/websocketpp -c source/control/WebSocket.cpp -o work/websocket.o
+g++ -std=c++17 -O1 -pthread -DRLC_RUNTIME_TESTING -DASIO_STANDALONE -D_WEBSOCKETPP_CPP11_STL_ -Ideps -Ideps/tinyxml2 -Ideps/asio/asio/include -Ideps/websocketpp tests/api_sender_smoke.cpp tests/platform_testing.cpp work/websocket.o deps/tinyxml2/tinyxml2.cpp -o work/bin/api_sender_smoke
+python3 tests/test_api_sender.py work/bin/api_sender_smoke
+```
+
+
 ## 終了遅延調査・保存時の元値の扱い（2026-10-27）
 
 - 要求：直近のRuntime／WebSocket変更後にResolumeの終了が遅いと感じたため、プラグインの関与を確認する。あわせて、Resolume再起動でベースライン（メモリのみ）が失われた際に、前回の設定を元の値と誤認する可能性を調べる。

@@ -108,8 +108,9 @@ if (${FFGL_BUILD_EXAMPLE_PLUGINS})
 endif()
 
 # Build the maintained plugins without pulling in the SDK examples.
-option(RLC_BUILD_PLUGINS "Build Layer Control and Layer Mask Control" ON)
+option(RLC_BUILD_PLUGINS "Build Layer Control, Layer Mask Control and APISender" ON)
 if(RLC_BUILD_PLUGINS AND NOT FFGL_BUILD_EXAMPLE_PLUGINS)
     add_subdirectory(source/plugins/LayerControl)
     add_subdirectory(source/plugins/LayerMaskControl)
+    add_subdirectory(source/plugins/APISender)
 endif()

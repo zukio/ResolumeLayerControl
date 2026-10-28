@@ -10,6 +10,10 @@ ResolumeのWebSocket Composition通知を契機に、ActiveなEffect Clipの設�
 
 次にdocs/SETUP.md、docs/VALIDATION.md、必要に応じてdocs/ARCHITECTURE.mdとdocs/PROTOCOL_MAP.mdを読む。過去の文書や古いログより、現行コード・最新の実機結果・ユーザーの最新報告を優先し、古い状況記述をそのまま引き継がない。
 
+## APISender追加（2026-10-28）
+
+利用者の新しい要求で、任意JSONをActive／非Active切替時に送る別プラグインAPISenderを追加した。以下のLayer限定・生JSON入力なし・実値同期／自動復元の要件は既存Layer系に適用し、APISenderはdocs/SPECIFICATION.mdの追加節とdocs/APISender.mdに従う。APISenderのFFGLテキストUIは専用アダプターで実装し、Layer用の定義生成を使用しない。CMake／Windowsソリューションの現行対象はAPISenderを含む3プラグイン。Linux Cloudの通信試験は明示的なテスト専用Platformで行い、製品のLinux対応とは扱わない。
+
 ## 守る要求
 
 - 要求にない機能禁止や併用制限を、未検証という理由だけで追加しない。未検証は未検証として報告する。エラーの影響は関係する対象・要求に限定し、新しい正常な操作まで継続して拒否しない。制限が必要なら、具体的な故障例・影響範囲・復帰条件を示す。「誤動作を防ぐ」だけでなく「要求された操作を成立させる」ことまで含めて設計する。

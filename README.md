@@ -18,9 +18,13 @@ An FFGL plugin for controlling a layer's Transition Blend Mode, Duration, and Ma
 
 ![Image](docs/media/screenshot001.png)
 
+## APISender
+
+[APISender](docs/APISender.md) sends user-entered WebSocket JSON when its Effect Clip becomes active or inactive. It is a separate plugin with Active Command and Inactive Command text parameters; no Target Layer or automatic baseline restoration. Build target: `ffgl-plugin-api-sender`. Host validation is pending.
+
 ## Build
 
-See [Build and setup](docs/SETUP.md) for the current Layer Control and Layer Mask Control build and installation instructions.
+See [Build and setup](docs/SETUP.md) for the current Layer Control, Layer Mask Control, and APISender build and installation instructions.
 
 ## Dependency
 

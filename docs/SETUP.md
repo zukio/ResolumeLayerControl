@@ -1,5 +1,9 @@
 # ビルドと導入
 
+## APISender追加（2026-10-28）
+
+`APISender`の入力・送信条件・ビルド・実機試験は[APISender.md](APISender.md)を参照。既存と同じCMake設定後、`ffgl-plugin-api-sender`をビルドする。Visual Studioのeffectsにも追加。Windows出力は`binaries/x64/Release/APISender.dll`、導入はDLLのみ。macOS CIのビルド対象にも追加したが、このCloud環境でWindows／macOS製品ビルドと実機ロードは未検証。
+
 ## プラグイン
 
 - **Layer Control**：Target Layer、Transition Blend、Durationを設定する。

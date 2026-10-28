@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 get_filename_component(root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(binary "${root}/build-control-plugins")
-if(NOT PLUGIN_TARGET MATCHES "^ffgl-plugin-layer-(control|mask-control)$")
+if(NOT PLUGIN_TARGET MATCHES "^ffgl-plugin-(layer-(control|mask-control)|api-sender)$")
     message(FATAL_ERROR "Unknown plugin target: ${PLUGIN_TARGET}")
 endif()
 if(NOT CONFIG MATCHES "^(Debug|Release)$" OR NOT ACTION MATCHES "^(Build|Rebuild|Clean)$")

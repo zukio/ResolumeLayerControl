@@ -12,6 +12,7 @@
 #include <chrono>
 #include <filesystem>
 #include <condition_variable>
+#include <optional>
 
 namespace control {
 struct Evaluation {
@@ -20,6 +21,9 @@ struct Evaluation {
     std::uint64_t revision = 0;
     Json evidence = Json::object();
     std::set<std::string> heldProperties;
+    // Event commands bypass value synchronization and baseline restoration.
+    std::optional<bool> commandActive;
+    std::vector<Json> commands;
 };
 struct ControlSource {
     virtual ~ControlSource() = default;
@@ -136,6 +140,23 @@ private:
                     for (const auto& old : previous) active.insert(old.first);
                     continue;
                 }
+                if (evaluation.commandActive) {
+                    const bool now = *evaluation.commandActive;
+                    const auto old = commandStates.find(owner);
+                    const bool changed = old == commandStates.end() ? now : old->second != now;
+                    if (changed) {
+                        if (source->Revision() != evaluation.revision) continue;
+                        // Consume before queueing: partial batches must never be replayed.
+                        commandStates[owner] = now;
+                        std::size_t accepted = 0;
+                        for (const auto& command : evaluation.commands) {
+                            if (stop.load() || source->Revision() != evaluation.revision || !socket.Send(command.dump())) break;
+                            ++accepted;
+                        }
+                        Log({{"event", "api_commands_queued"}, {"owner", owner}, {"active", now},
+                            {"accepted", accepted}, {"total", evaluation.commands.size()}});
+                    } else commandStates[owner] = now;
+                }
                 revisions[owner] = {source, evaluation.revision};
                 std::map<std::string, std::string> next;
                 Json comparisons = Json::array();
@@ -163,6 +184,8 @@ private:
         }
         for (auto it = ownerPaths.begin(); it != ownerPaths.end();)
             if (!liveOwners.count(it->first)) it = ownerPaths.erase(it); else ++it;
+        for (auto it = commandStates.begin(); it != commandStates.end();)
+            if (!liveOwners.count(it->first)) it = commandStates.erase(it); else ++it;
         for (auto* cache : {&lastGates, &lastComparisons})
             for (auto it = cache->begin(); it != cache->end();)
                 if (!liveOwners.count(it->first)) it = cache->erase(it); else ++it;
@@ -334,7 +357,7 @@ private:
             // Requests and replies belong to the old connection. Preserve the
             // baseline by parameter ID, but never replay an old outbound queue.
             reconciler.Reset(); deadlines.clear(); retryAfter.clear();
-            lastGates.clear(); lastComparisons.clear();
+            lastGates.clear(); lastComparisons.clear(); commandStates.clear();
             if (stop.load()) break;
             Log({{"event", "reconnect_wait"}, {"delay_ms", retryDelay}});
             std::unique_lock<std::mutex> lock(reconnectMutex);
@@ -358,6 +381,7 @@ private:
     std::map<std::string, Baseline> baselines;
     std::map<std::string, std::map<std::string, std::string>> ownerPaths;
     std::map<std::string, Json> lastGates, lastComparisons;
+    std::map<std::string, bool> commandStates;
     struct Retry { Json desired; std::string owner; std::uint64_t revision; std::chrono::steady_clock::time_point until; };
     std::map<std::string, Retry> retryAfter;
     std::uint64_t generation = 0;
