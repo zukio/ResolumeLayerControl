@@ -12,10 +12,16 @@ inline std::vector<Json> ParseAPICommands(const std::string& text) {
     else if (json.is_array()) commands = json.get<std::vector<Json>>();
     else throw std::runtime_error("API commands must be an object or array of objects");
     if (commands.size() > 256) throw std::runtime_error("API command batch exceeds 256 commands");
-    for (const auto& command : commands)
+    for (auto& command : commands) {
         if (!command.is_object() || !command.contains("action") || !command["action"].is_string() ||
             command["action"].get_ref<const std::string&>().empty())
             throw std::runtime_error("each API command needs a nonempty action string");
+        // Resolume's WebSocket post envelope expects the HTTP body as text.
+        // Preserve explicit strings and all other actions/fields verbatim.
+        if (command["action"] == "post" && command.contains("body") &&
+            (command["body"].is_object() || command["body"].is_array()))
+            command["body"] = command["body"].dump();
+    }
     return commands;
 }
 

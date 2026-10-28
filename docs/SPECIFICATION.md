@@ -7,6 +7,7 @@
 利用者の新しい要求により、既存2プラグインとは別に`APISender`を追加する。以下はAPISenderに限り、過去の「任意JSON入力UIを設けない」「Layerを対象とする」「実値比較・ベースライン復元」の制約を置き換える。Layer Control／Layer Mask Controlの仕様は維持する。
 
 - Enabled、Active Command、Inactive Command、内部識別用Instance Keyを持つ。コマンドはJSONオブジェクトまたは配列で、空欄は送信しない。同じResolume本体への既存WebSocket経路を使用し、対象は入力JSONで指定する。
+- 入力補助として`action:"post"`の`body`がオブジェクト／配列の場合だけ、送信用にJSON文字列化する。文字列・その他の型・bodyなし・他actionは変更しない。Active／Inactiveとバッチ内の各コマンドに適用し、保存する入力テキストは変更しない。
 - 観測したActive／非Active切替時にそれぞれ1回だけ送る。非Activeコマンドで復帰を表し、自動復元は行わない。継続同期・Active中編集・再トリガーによる再送はしない。
 - 初回・再接続後に既にActiveならActiveコマンドを送る。最初から非Activeなら送らない。Enabled OFF／Effect Bypass ONも離脱扱い。キー未解決・重複は保留する。
 - 高速切替の観測は現行の通知集約方式に従う。キュー受理・サーバー実行・映像適用は区別する。配列は順次キュー投入し、部分失敗後の自動再送・ロールバックはしない。再接続後のActive送信は重複実行を伴い得る。

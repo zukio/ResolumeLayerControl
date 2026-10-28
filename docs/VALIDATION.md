@@ -1,5 +1,21 @@
 # 検証記録
 
+## APISender post body入力補助（2026-10-28）
+
+- 利用者報告：swapのbodyを配列で送ると失敗し、JSON文字列として送ると動作。ログ`logs/control-20261028-171832-890.jsonl`には`error reading field "body": value is not std::string`。要求によりpostのbodyが配列／オブジェクトの場合だけ送信用に文字列化し、文字列・他型・他action・保存テキストは保持する。
+- Windowsで`cmake --build build-control-tests --config Release --target api_sender_smoke runtime_smoke`成功。初回はWindows SDK参照先へのサンドボックスアクセス拒否となり、昇格実行で成功。
+- `ctest --test-dir build-control-tests -C Release -R "^(api_sender|websocket_runtime)$" --output-on-failure`は2/2成功。模擬WebSocket相手でActive／Inactive双方の配列・入れ子オブジェクトの文字列化、引用符・改行保持、文字列の二重変換なし、bodyなし・null・数値・他actionの非変換を確認。入力テキスト保持も確認。
+- `cmake --build build-control-plugins --config Release --target ffgl-plugin-api-sender`成功。出力`binaries/x64/Release/APISender.dll`。稼働中Arenaへの導入・再起動・修正版DLLでの実機試験は未実施。
+- 実機再現：Arena終了後に修正版DLLを導入し再起動。Active CommandへAPISender.mdの配列bodyのswapを入力、Inactiveは空欄、非ActiveからActiveにしてClip 1と3の配置交換およびエラーログ不在を確認する。既存の文字列body形式でも同じ操作を別途確認する。
+
+## APISender Column起動の利用者報告（2026-10-28）
+
+- 対象：利用者のWindows／Resolume Arena環境。今回の製品版番号・DLLコミットは未照合。APISenderはColumn 7に配置との申告。
+- `logs/control-20261028-171832-890.jsonl`ではActive／Inactive各1件のキュー受理と、それぞれ直後の`Route not matched`を確認。`docs/evidence/ws-position-01.jsonl`内のCompositionではActive Commandが`{"action":"post","path":"/composition/columns/1/connect"}`、Inactive CommandがColumn 3への同形式。受信ログ7行目にもルート不一致あり。ただし受信ログ単独では送信との対応は確定できない。
+- 再現案内：Active Commandを`{"action":"trigger","parameter":"/composition/columns/1/connect"}`に変更、Inactive Commandを空欄にし、一度非ActiveにしてからColumn 7を起動する。
+- この案内後、利用者から「動作したみたい」との報告あり。Column起動の暫定的な実機報告として記録する。成功時の送受信ログ・最終入力・映像は未照合。Inactive側のColumn起動、連鎖、保存互換性などの全面合格にはしない。
+- 説明書にtrigger形式とGET結果の表示・転送がない点を追記。ソース変更なし、文書のみのため自動テストは未実施。
+
 ## APISender実装・Cloud検証（2026-10-28）
 
 - GitHub連携でmasterとDevが同じ`88fa376df23590eb210a8205a486dc03796f82eb`であることを確認し、同コミットからローカルDevへ切替。既存Layer系と独立したAPISender（FFGL ID RAPI）を追加。仕様と実機再現は[APISender.md](APISender.md)。

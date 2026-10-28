@@ -11,24 +11,44 @@ APISenderはEffect ClipのActive／非Active切替時に、入力したJSONを�
 | 2 | Inactive Command | 非Active時に送るJSON。初期値は空欄 |
 | 3 | Instance Key | Clip対応用。通常は編集しない |
 
-単一のJSONオブジェクト、またはオブジェクトの配列を入力します。空欄・空白・空配列は送信なしです。各オブジェクトは空でない文字列の`action`が必要です。他のフィールドはResolumeへそのまま渡し、Target Layerへの変換や対象制限は行いません。例えば実測済みのDurationパスへの設定形式は次です。Layer番号と値は実際の構成に合わせて変更してください。
+単一のJSONオブジェクト、またはオブジェクトの配列を入力します。空欄・空白・空配列は送信なしです。各オブジェクトは空でない文字列の`action`が必要です。後述のpostのbody入力補助を除き、フィールドはResolumeへそのまま渡し、Target Layerへの変換や対象制限は行いません。例えば実測済みのDurationパスへの設定形式は次です。Layer番号と値は実際の構成に合わせて変更してください。
 
 ```json
 {"action":"set","parameter":"/composition/layers/3/transition/duration","value":2.5}
 ```
 
-複数コマンドは次の形式です。配列順で個別のWebSocketメッセージとしてキューへ渡します。
+Column 1を起動する場合は次をActive Commandに入力します。HTTPヘッダーやmethodは入力しません。2026-10-28、利用者からこの形式で「動作したみたい」との実機報告あり。先に案内した`post`＋`path`のColumn connect形式では対象環境で`Route not matched`が記録されました。
+
+```json
+{"action":"trigger","parameter":"/composition/columns/1/connect"}
+```
+
+まずInactive Commandを空欄にし、Effect Clipを非ActiveからActiveへ切り替えて確認します。Active中の編集だけでは再送しません。Column起動で自身が非Activeになる場合、設定済みのInactive Commandも送信対象になるため、連鎖動作は構成ごとに確認してください。
+
+`get`の取得結果を表示・転送・後続コマンドへ渡す機能はありません。`unsubscribe`はパラメータ変更通知の購読解除であり、Clip停止やColumn起動ではありません。形式の参照：[公式WebSocket API](https://resolume.com/support/en/websocket-api)。
+
+複数コマンドは次の形式です。配列順で個別のWebSocketメッセージとしてキューへ渡します。対象Layer番号は実際の構成に合わせます。
 
 ```json
 [
   {"action":"set","parameter":"/composition/layers/3/transition/duration","value":2.5},
-  {"action":"get","parameter":"/composition/layers/3/transition/duration"}
+  {"action":"set","parameter":"/composition/layers/4/transition/duration","value":1.0}
 ]
 ```
 
 Inactive Commandも同じ形式で、明示的に戻したい値を入力します。変更前の値の保存・自動復元はしません。by-id指定も入力どおりに送るため、Compositionを変更・再読込した際のIDの有効性は利用者側で確認します。
 
 入力は1プロパティにつきUTF-8で64 KiB、配列は256コマンドまでです。不正JSON・配列内の非オブジェクト・不正action・上限超過は編集全体を拒否し、直前の有効な設定を保ちます。FFGLには失敗を返しますが、ホスト上のエラー表示は未検証です。APIとしてのパス・action・値の適否はサーバーが判断します。
+
+## postのbody入力補助
+
+`action`が`post`で、`body`が配列またはオブジェクトなら、送信用に内部でJSON文字列へ変換します。文字列は二重変換せずそのまま送ります。bodyなし・数値・boolean・nullや他actionのフィールドは変更しません。入力・保存テキストは元の形を保持し、Active／Inactive双方とコマンド配列に適用します。
+
+```json
+{"action":"post","id":"swap-test","path":"/composition/clips/swap","body":["/composition/layers/1/clips/1","/composition/layers/1/clips/3"]}
+```
+
+この入力はbodyだけをJSON文字列化して送ります。利用者環境では直接配列を送ると`value is not std::string`となり、手動で文字列化したswapは動作したとの報告あり。入力補助を追加したDLLでの実機確認は別途必要です。
 
 ## 送信条件
 

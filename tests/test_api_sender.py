@@ -98,6 +98,19 @@ def run(executable, initially_active):
                 clip["connected"]["value"] = "Connected"
                 send(conn, snapshot); quiet(conn)
                 send(conn, snapshot); quiet(conn)
+                command("bodies")
+                for state in ("Disconnected", "Connected"):
+                    clip["connected"]["value"] = state
+                    send(conn, snapshot)
+                    batch = [receive(conn) for _ in range(8)]
+                    assert json.loads(batch[0]["body"]) == ["/composition/layers/1/clips/1", "/composition/layers/1/clips/3"]
+                    assert json.loads(batch[1]["body"]) == {"name": 'quote" and newline\n', "nested": [1, True]}
+                    assert batch[2]["body"] == "[1, 2]"
+                    assert "body" not in batch[3]
+                    assert batch[4]["body"] is None and batch[5]["body"] == 3
+                    assert batch[6] == {"action": "set", "value": "One Below", "body": {"unchanged": True}}
+                    assert batch[7] == {"action": "remove", "body": []}
+                    quiet(conn)
                 process.stdin.write("quit\n"); process.stdin.flush()
                 assert process.wait(timeout=5) == 0, process.stderr.read()
             rows = [json.loads(line) for line in log.read_text().splitlines()]

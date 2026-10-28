@@ -7,6 +7,20 @@ int main(int argc, char** argv) {
         using Source = control::APISenderSource;
         auto source = std::make_shared<Source>();
         source->SetText(Source::Identity, "api-test");
+        const std::string bodyInput = R"([{"action":"post","body":["/composition/layers/1/clips/1","/composition/layers/1/clips/3"]},{"action":"post","body":{"name":"quote\" and newline\n","nested":[1,true]}},{"action":"post","body":"[1, 2]"},{"action":"post"},{"action":"post","body":null},{"action":"post","body":3},{"action":"set","value":"One Below","body":{"unchanged":true}},{"action":"remove","body":[]}])";
+        source->SetText(Source::ActiveCommand, bodyInput);
+        source->SetText(Source::InactiveCommand, bodyInput);
+        if (source->GetText(Source::ActiveCommand) != bodyInput || source->GetText(Source::InactiveCommand) != bodyInput)
+            throw std::runtime_error("body normalization changed saved text");
+        const auto original = control::Json::parse(bodyInput);
+        const auto normalized = control::ParseAPICommands(bodyInput);
+        for (std::size_t i = 0; i < normalized.size(); ++i) {
+            if (i < 2) {
+                if (!normalized[i]["body"].is_string() ||
+                    control::Json::parse(normalized[i]["body"].get<std::string>()) != original[i]["body"])
+                    throw std::runtime_error("structured post body not serialized losslessly");
+            } else if (normalized[i] != original[i]) throw std::runtime_error("unrelated command changed");
+        }
         source->SetText(Source::ActiveCommand, R"([{"action":"set","parameter":"/composition/master","value":0.5},{"action":"trigger","parameter":"/composition/columns/2/connect"}])");
         source->SetText(Source::InactiveCommand, R"({"action":"set","parameter":"/composition/master","value":1})");
         // Validation must be atomic: reject invalid edits and retain the old text.
@@ -31,6 +45,10 @@ int main(int argc, char** argv) {
             else if (line == "enable") source->SetEnabled(1);
             else if (line == "empty") source->SetText(Source::ActiveCommand, "");
             else if (line == "edit") source->SetText(Source::ActiveCommand, R"({"action":"get","parameter":"/composition"})");
+            else if (line == "bodies") {
+                source->SetText(Source::ActiveCommand, bodyInput);
+                source->SetText(Source::InactiveCommand, bodyInput);
+            }
             std::cout << "ok" << std::endl;
         }
         runtime.reset();
