@@ -1,5 +1,12 @@
 # 検証記録
 
+## APISender追加の既存Layer系への影響確認（2026-10-28）
+
+- `88fa376`（追加前）から`563bea6`までの差分を確認。既存LayerControl／LayerMaskControl専用コード・definitions・StateReconciler・WebSocket.cppは変更なし。共通RuntimeにはAPISender用の任意コマンド送信分岐と状態管理を追加しているため、共通部分が無変更という意味での「影響なし」ではない。既存DefinedSourceはcommandActiveを設定せず、新分岐を通らない。CMakeの定義生成スキップはAPISenderのNO_DEFINITION指定時のみ。
+- Windowsで`cmake --build build-control-tests --config Release`、`ctest --test-dir build-control-tests -C Release --output-on-failure`を再実行、7/7成功（46.68秒）。ロジック、定義、WebSocket transport／runtime／recovery、server設定、APISenderを含む。
+- `cmake --build build-control-plugins --config Release --target ffgl-plugin-layer-control ffgl-plugin-layer-mask-control`成功。Windows SDK参照制限を解除した昇格ビルド。生成DLLはbinaries/x64/Release、Arenaへのコピー・再起動は行っていない。
+- 今回は静的差分確認・模擬通信・ビルド検証。実機での併用・映像適用の全面的な無影響を証明するものではない。APISenderが既存Controlの管理値やClip配置を変更した場合は、その変更に応じて既存Controlが次のComposition通知で再評価するため、操作内容による相互作用はある。
+
 ## APISender post body入力補助（2026-10-28）
 
 - 利用者報告：swapのbodyを配列で送ると失敗し、JSON文字列として送ると動作。ログ`logs/control-20261028-171832-890.jsonl`には`error reading field "body": value is not std::string`。要求によりpostのbodyが配列／オブジェクトの場合だけ送信用に文字列化し、文字列・他型・他action・保存テキストは保持する。
